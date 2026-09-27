@@ -1,0 +1,12 @@
+{
+  "name": "Cardinal",
+  "short_name": "Cardinal",
+  "description": "Your personal AI workforce.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#02050d",
+  "theme_color": "#02050d",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

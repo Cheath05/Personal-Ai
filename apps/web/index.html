@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#02050d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Cardinal</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Michroma&family=Oxanium:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-view="nexus">
+  <canvas id="bg" aria-hidden="true"></canvas>
+
+  <div class="app">
+    <header class="top">
+      <div class="top-in">
+        <div class="brand">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>
+          <b>CARDINAL</b>
+        </div>
+        <nav class="nav" aria-label="Views">
+          <button type="button" data-view="nexus" aria-current="page">Nexus</button>
+          <button type="button" data-view="today">Today</button>
+          <button type="button" data-view="training">Training</button>
+          <button type="button" data-view="brain">Brain</button>
+          <button type="button" data-view="review">Review</button>
+          <button type="button" data-view="access">Access</button>
+        </nav>
+        <div class="top-r">
+          <button class="usage-chip" type="button" id="usage-chip" aria-haspopup="dialog" aria-expanded="false" title="Token usage this month">
+            <span id="usage-chip-text">–</span>
+          </button>
+          <button class="icon-btn" type="button" id="open-pal">System Call <kbd>⌘K</kbd></button>
+          <span class="clock" id="clock">--:--:--</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ================= NEXUS ================= -->
+    <main class="view" id="v-nexus">
+      <div class="nexus">
+        <div class="stage" id="stage">
+          <span class="stage-hint">Select a node to switch agents</span>
+        </div>
+        <div class="nexus-side">
+          <aside class="panel agent-card neon" aria-live="polite">
+            <div class="ph"><span class="uid" id="a-uid">–</span><span class="light" id="a-light">Checking</span></div>
+            <div class="nm" id="a-name">–</div>
+            <p class="role" id="a-role"></p>
+            <div class="readouts">
+              <div class="ro"><b id="a-sys">–</b><span>System ctrl</span></div>
+              <div class="ro"><b id="a-obj">–</b><span>Object ctrl</span></div>
+              <div class="ro"><b id="a-voice-short">–</b><span>Voice</span></div>
+            </div>
+            <div class="status-line" id="a-status"></div>
+            <details>
+              <summary>Access &amp; permissions</summary>
+              <div class="perm">
+                <div><span class="label">Will see</span><ul id="a-sys-list"></ul></div>
+                <div><span class="label">Will change, with approval</span><ul id="a-obj-list"></ul></div>
+              </div>
+              <p class="note small">No agent has tools yet. Connections arrive in Phase 2.</p>
+            </details>
+          </aside>
+
+          <aside class="panel convo">
+            <div class="ph"><span class="t" id="c-title">Conversation</span><span class="m" id="c-state">IDLE</span></div>
+            <div class="transcript" id="transcript" aria-live="polite"></div>
+            <form class="composer" id="composer" autocomplete="off">
+              <label class="sr-only" for="composer-input">Message</label>
+              <input id="composer-input" type="text" placeholder="Message Cardinal" maxlength="8000">
+              <button class="btn primary" type="submit" id="send">Send</button>
+            </form>
+          </aside>
+        </div>
+      </div>
+    </main>
+
+    <!-- ================= TODAY ================= -->
+    <main class="view" id="v-today" hidden>
+      <div class="vhead"><div><h1>Today</h1><p>Your calendar, both inboxes, Blackboard deadlines and the morning briefing.</p></div><span class="who">ORDINAL [ORD1-2071]</span></div>
+      <div class="grid two today">
+        <section class="panel neon span-all">
+          <div class="ph"><span class="t">Briefing</span><span class="m" id="brief-meta">–</span></div>
+          <p class="brief" id="brief-text">Loading…</p>
+          <div class="row-actions">
+            <button type="button" class="btn" id="brief-now">Write it now</button>
+            <span class="note small" id="brief-note"></span>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Schedule</span><span class="m">TODAY · TOMORROW</span></div>
+          <ul class="list agenda" id="sched-list"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Due soon</span><span class="m">BLACKBOARD · 7 DAYS</span></div>
+          <ul class="list agenda" id="due-list"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Inbox</span><span class="m">UNREAD · LAST 2 DAYS</span></div>
+          <ul class="list agenda" id="inbox-list"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Connections</span><span class="m">READ-ONLY</span></div>
+          <ul class="list" id="conn-list"></ul>
+          <p class="note small">Cardinal can read these but can't change anything. Changes arrive with approvals in Phase 2b.</p>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================= TRAINING ================= -->
+    <main class="view" id="v-training" hidden>
+      <div class="vhead"><div><h1>Training</h1><p>Your 12-week mile and 5K block. Paces are starting estimates from a 30:00 5K.</p></div><span class="who">VECTOR [VEC4-0098]</span></div>
+      <div class="grid two">
+        <section class="panel neon">
+          <div class="ph"><span class="t">Weekly structure</span><span class="m">SUN · TUE · WED</span></div>
+          <div class="runs">
+            <div class="run"><span class="d">Sun</span><div><b>Long easy</b><p>3 mi at 11:45–12:45 /mi plus 4 × 20 s strides. Builds to 5–5.5 mi.</p></div></div>
+            <div class="run"><span class="d">Tue</span><div><b>Quality: intervals or tempo</b><p>Odd weeks: 6 × 400 m at ~2:15. Even weeks: 15 min at ~10:00 /mi.</p></div></div>
+            <div class="run"><span class="d">Wed</span><div><b>Easy recovery</b><p>2 mi very easy plus strides. Builds to 3 mi.</p></div></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Targets and zones</span><span class="m">ESTIMATES</span></div>
+          <dl class="kv">
+            <dt>Mile</dt><dd>8:00 → about 7:30</dd>
+            <dt>5K</dt><dd>30:00 → about 27:30</dd>
+            <dt>Easy</dt><dd>11:45–12:45 /mi</dd>
+            <dt>Tempo</dt><dd>about 10:00 /mi</dd>
+            <dt>Interval</dt><dd>400 m in about 2:15</dd>
+          </dl>
+          <p class="note">Apple Watch data (Phase 4) will adjust these after every run and time trial. Ask Vector anything in the Nexus meanwhile.</p>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================= BRAIN ================= -->
+    <main class="view" id="v-brain" hidden>
+      <div class="vhead"><div><h1>Second Brain</h1><p>Your school folder, notes, flashcards and Core Memory.</p></div><span class="who">AXIOM [AXM3-0314] · SIGMA [SGM6-1089]</span></div>
+      <section class="panel soon">
+        <div class="ph"><span class="t">Arrives in Phase 5</span><span class="m">SECOND BRAIN</span></div>
+        <p>Drop files into one folder and Axiom files them, writes summaries and flashcards, and answers with page citations. You can already ask Axiom to explain concepts in the Nexus.</p>
+      </section>
+    </main>
+
+    <!-- ================= REVIEW ================= -->
+    <main class="view" id="v-review" hidden>
+      <div class="vhead"><div><h1>Review</h1><p>Morning and evening check-ins, and the Sunday rollup.</p></div><span class="who">DELTA [DLT5-0712]</span></div>
+      <section class="panel soon">
+        <div class="ph"><span class="t">Arrives in Phase 3</span><span class="m">EXECUTIVE ASSISTANT</span></div>
+        <p>Delta checks in at 7:00 AM and 9:30 PM and writes a weekly rollup with three experiments. You can already talk a day through with Delta in the Nexus.</p>
+      </section>
+    </main>
+
+    <!-- ================= ACCESS ================= -->
+    <main class="view" id="v-access" hidden>
+      <div class="vhead"><div><h1>Access</h1><p>Where the brains run, what they cost, and what agents may touch.</p></div><span class="who">SYSTEM</span></div>
+      <div class="grid two">
+        <section class="panel neon">
+          <div class="ph"><span class="t">Brains</span><span class="m" id="brains-mode">–</span></div>
+          <ul class="list" id="brains-list"></ul>
+          <p class="note small">Local brains are Ollama servers listed in <code>services/api/config/brains.yaml</code>.</p>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Usage this month</span><span class="m" id="usage-month">–</span></div>
+          <div id="usage-full"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Trust rules</span><span class="m">PHASE 2</span></div>
+          <p class="note">Remembered approvals arrive with the first device and calendar actions. Until then, no agent can change anything.</p>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Never accessed</span><span class="m">LOCKED IN CODE</span></div>
+          <ul class="never">
+            <li><span>Messages and call history</span><span class="tag bad">Locked</span></li>
+            <li><span>Photos and contacts</span><span class="tag bad">Locked</span></li>
+            <li><span>Passwords, Keychain, banking</span><span class="tag bad">Locked</span></li>
+            <li><span>Location history</span><span class="tag bad">Locked</span></li>
+            <li><span>Keystrokes and screenshots</span><span class="tag bad">Locked</span></li>
+          </ul>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Usage popover -->
+  <div class="usage-pop" id="usage-pop" role="dialog" aria-label="Token usage" hidden>
+    <div class="ph"><span class="t">Usage</span><span class="m" id="usage-pop-month">–</span></div>
+    <div id="usage-pop-body"></div>
+  </div>
+
+  <!-- System Call palette -->
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="palette" id="palette" hidden role="dialog" aria-label="System Call">
+    <form class="pal-in" id="pal-form" autocomplete="off">
+      <label for="pal-input">SYSTEM CALL</label>
+      <input id="pal-input" type="text" placeholder="Summon Vector">
+    </form>
+    <ul class="pal-list" id="pal-list"></ul>
+  </div>
+
+  <div class="toast" id="toast" hidden><span id="toast-msg"></span></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

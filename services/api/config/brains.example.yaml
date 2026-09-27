@@ -1,0 +1,26 @@
+# Where Cardinal's brains live.
+# Copy this file to brains.yaml (git-ignored) and change the addresses for your network.
+# Each local brain is an Ollama server. Order decides who gets asked first.
+
+local:
+  g14:
+    url: "http://g14:11434"              # ROG G14 by its Tailscale name (or its LAN IP)
+    model: "qwen3:8b"                     # hybrid model; Cardinal turns its thinking mode off
+    label: "ROG G14 · RTX 4060"
+  mac:
+    url: "http://localhost:11434"         # This M3 MacBook Air (8 GB: the 4B instruct model answers directly)
+    model: "qwen3:4b-instruct"
+    label: "M3 MacBook Air"
+  server:
+    url: "http://cardinal:11434"          # Proxmox VM, once the hub moves there
+    model: "qwen3:4b-instruct"
+    label: "Proxmox server"
+
+order:
+  interactive: [g14, mac, server]         # Someone is waiting: fastest first
+  background: [server, g14, mac]          # Scheduled jobs: keep laptops free
+
+claude:
+  default: "claude-sonnet-5"
+  cheap: "claude-haiku-4-5"
+  deep: "claude-sonnet-5"                 # Switch to claude-opus-5 for the weekly rollup if budget allows
