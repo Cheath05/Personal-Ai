@@ -429,7 +429,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | Run | Purpose | Weeks 1–4 | Builds to (weeks 9–12) |
 |---|---|---|---|
 | **Sun: Long easy** | Aerobic base | **3 mi at 11:45–12:45 /mi**, plus 4 × 20 s strides | 5–5.5 mi easy. The last mile at tempo from week 7 |
-| **Tue (odd weeks): Intervals** | Mile speed, running economy | 10 min warm-up, 6 × 400 m at ~2:15 with 90 s jog, 10 min cool-down | 8 × 400 m at ~2:00 (7:30 mile pace) |
+| **Tue (odd weeks): Intervals** | Mile speed, running economy | 10 min warm-up, 6 × 400 m at ~2:19 with 90 s jog, 10 min cool-down | 8 × 400 m at ~1:52 (7:30 mile pace) |
 | **Tue (even weeks): Tempo** | Holding pace, the main 5K builder | 1 mi easy, **15 min at ~10:00 /mi**, 1 mi easy | 25 min at tempo, or 2 × 12 min |
 | **Wed: Easy recovery** | Mileage without extra strain | 2 mi very easy, 4 × 20 s strides | 3 mi easy |
 
@@ -437,7 +437,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
   - Easy 11:45–12:45 /mi
   - Tempo about 10:00 /mi
   - Interval 400 m about 2:15
-  - Goal-mile 400 m 2:00
+  - Goal-mile 400 m 1:52 (a 7:30 mile; 2:00 would be the current 8:00 pace)
 - **Why easy runs feel slow:** they're meant to. If you can't hold a conversation, slow down. Vector checks this with your Apple Watch heart rate.
 - **Time trials:** a mile every 4 weeks, and a 5K at the end of weeks 6 and 12. Paces recalculate after each one.
 - **Adjustments from Apple Watch data:**
@@ -503,7 +503,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | 2a+. Calendar ✅ | Hub | Day calendar view (a week back), add/remove your own items, "Cardinal" Google calendar that shows in Apple Calendar, iCloud/other calendar links, syllabus import (link, photo, PDF, text) with review before adding |
 | 2b. Life Dashboard: act ✅ | Hub | Action Preview queue (Authorize / Always allow / Deny), narrow **trust rules** with an always-ask list enforced in code, Activity Log with Undo, Sigma's rule suggestions, Axiom's study-block planner (ghost blocks on the calendar) |
 | 3. Executive Assistant ✅ | Hub | Delta's morning check-in and evening review, weekly rollup with a plan you authorize, experiments, Core Memory v1 with Sigma's nightly patterns (shown to you first) |
-| 4. Running | Mac + iPhone | Health Auto Export, Vector, pace zones, run plan |
+| 4. Running ✅ | Hub + iPhone | Vector's 12-week plan and VDOT paces (recalculated after time trials), runs checked against each session, status window, runs proposed on the calendar, Apple Watch data via Health Auto Export (automatic) or an Apple Health export (free), manual logging, readiness from sleep and resting HR |
 | 5. Second Brain | Mac | Axiom ingestion, notes, flashcards, exam mode |
 | 6. Full Workforce | Mac | Relay drafts, Sigma patterns, Radix, ActivityWatch |
 | 7. Hardening | Server | Push notifications, login with a passkey, Postgres if SQLite ever gets slow, restore drills |

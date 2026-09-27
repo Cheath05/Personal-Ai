@@ -27,6 +27,16 @@ async function request(path, options = {}) {
   return data;
 }
 
+async function upload(path, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(path, { method: "POST", body: form, headers: { "X-Cardinal-Device": DEVICE } });
+  let data = null;
+  try { data = await res.json(); } catch { /* empty body */ }
+  if (!res.ok) throw new Error(data && typeof data.detail === "string" ? data.detail : `Upload failed (${res.status}).`);
+  return data;
+}
+
 export const api = {
   agents: () => request("/api/agents"),
   brains: () => request("/api/brains"),
@@ -68,4 +78,10 @@ export const api = {
   addMemory: (text, kind) => request("/api/memory", { method: "POST", body: { text, kind } }),
   editMemory: (id, text) => request(`/api/memory/${id}`, { method: "PATCH", body: { text } }),
   deleteMemory: (id) => request(`/api/memory/${id}`, { method: "DELETE" }),
+  running: () => request("/api/running"),
+  logRun: (body) => request("/api/running/runs", { method: "POST", body }),
+  deleteRun: (id) => request(`/api/running/runs/${id}`, { method: "DELETE" }),
+  proposeRuns: () => request("/api/running/propose", { method: "POST" }),
+  ingestToken: () => request("/api/health/token", { method: "POST" }),
+  importHealth: (file) => upload("/api/health/import", file),
 };

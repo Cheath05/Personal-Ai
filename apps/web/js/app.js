@@ -3,6 +3,7 @@ import { createActions } from "./actions.js";
 import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
 import { createReview } from "./review.js";
+import { createRunning } from "./running.js";
 
 const $ = (id) => document.getElementById(id);
 // Motion is a per-device choice. Full by default: Windows reports "reduce motion" whenever its
@@ -26,6 +27,7 @@ let nexus = null;
 let calendar = null;
 let actions = null;
 let reviewUI = null;
+let runningUI = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -68,6 +70,7 @@ function go(view) {
   if (view === "access") refreshAccess();
   if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); }
   if (view === "review") reviewUI?.refresh();
+  if (view === "training") runningUI?.refresh();
 }
 
 /* ---------- Agent selection ---------- */
@@ -574,6 +577,7 @@ async function boot() {
     onChange: () => actions.refresh(),
   });
   reviewUI.refreshChip();
+  runningUI = createRunning({ toast, onChange: () => actions.refresh() });
   setInterval(() => { if (!document.hidden) { actions.refresh(); reviewUI.refreshChip(); } }, 60000);
   $("ci-chip").addEventListener("click", () => go("review"));
   $("ok-chip").addEventListener("click", () => go("today"));

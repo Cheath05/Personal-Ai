@@ -227,6 +227,41 @@ class Memory(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class Run(SQLModel, table=True):
+    """A run, from the Apple Watch (Health Auto Export or an Apple Health export) or logged by hand."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    start: datetime = Field(index=True)
+    duration_s: int
+    distance_m: float
+    avg_hr: float | None = None
+    max_hr: float | None = None
+    name: str | None = None
+    source: str = "manual"  # manual | auto_export | health_export
+    external_id: str | None = Field(default=None, index=True)
+    time_trial: bool = False
+    notes: str | None = None
+
+
+class HealthMetric(SQLModel, table=True):
+    """One value per day and metric: resting heart rate, HRV, VO2 max, sleep hours."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    day: str = Field(index=True)
+    name: str = Field(index=True)  # resting_hr | hrv | vo2max | sleep_hours
+    value: float
+    unit: str | None = None
+    source: str = "auto_export"
+
+
+class Pref(SQLModel, table=True):
+    """Small bits of state: the run plan's start date, current race times, the ingest token's hash."""
+
+    key: str = Field(primary_key=True)
+    value: str
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 _engine = None
 
 

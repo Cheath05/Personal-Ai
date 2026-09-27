@@ -177,7 +177,7 @@ async def plan_study(session: Session, cal: Calendar, actions: Actions, *, now: 
                     continue
                 s, en = datetime.fromisoformat(e["start"]).astimezone(tz), datetime.fromisoformat(e["end"]).astimezone(tz)
                 busy.append((s.hour * 60 + s.minute if s.date() == d else 0, en.hour * 60 + en.minute if en.date() == d else 24 * 60))
-                if e["source"] == "proposed" or (e["source"] == "cardinal" and e.get("kind") == "reading"):
+                if e["source"] in ("proposed", "cardinal") and e.get("kind") == "reading":  # study blocks only, not runs
                     study_blocks += 1
                     study_minutes += busy[-1][1] - busy[-1][0]
             busy += placed.get(d, [])

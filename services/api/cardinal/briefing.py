@@ -124,6 +124,9 @@ async def run_scheduler(state, settings) -> None:
                 with Session(get_engine()) as session:
                     result = await plan_study(session, state.today.calendar, state.actions)
                     log.info("Study planner: %s", result["note"])
+                    from .running import propose_runs
+                    runs = await propose_runs(session, state.today.calendar, state.actions, now)
+                    log.info("Run planner: %s proposed, %s added by rules", runs["proposed"], runs["auto"])
         except asyncio.CancelledError:
             raise
         except Exception:

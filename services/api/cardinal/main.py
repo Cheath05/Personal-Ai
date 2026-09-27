@@ -7,13 +7,13 @@ import json
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import briefing, planner, review, syllabus, usage
+from . import briefing, planner, review, running, syllabus, usage
 from .actions import ActionError, Actions
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
@@ -149,6 +149,8 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
     if "tasks" in agent.access:
         extra = review.context_text(session, datetime.now(app.state.today.tz))
         context = f"{context}\n{extra}".strip()
+    if "running" in agent.access:
+        context = f"{context}\n{running.context_text(session, datetime.now(app.state.today.tz))}".strip()
     try:
         result = await router.run(
             session, agent_id=agent.id, job=agent.job,
@@ -690,6 +692,108 @@ def delete_memory(memory_id: int, session: Session = Depends(get_session)):
         session.delete(m)
         session.commit()
     return list_memory(session)
+
+
+# ---------- Running: Vector's plan, your runs, Apple Watch data ----------
+
+@app.get("/api/running")
+def running_status(session: Session = Depends(get_session)):
+    return running.status(session, now_local())
+
+
+class RunIn(BaseModel):
+    date: str
+    start: str | None = None  # HH:MM
+    miles: float = Field(gt=0.1, le=60)
+    time: str  # mm:ss or h:mm:ss
+    avg_hr: float | None = Field(default=None, ge=40, le=230)
+    time_trial: bool = False
+    notes: str | None = Field(default=None, max_length=500)
+
+
+def parse_clock(value: str) -> int:
+    parts = [int(p) for p in value.strip().split(":")]
+    if not 2 <= len(parts) <= 3 or any(p < 0 for p in parts):
+        raise ValueError(value)
+    h, m, s = ([0] + parts)[-3:]
+    return h * 3600 + m * 60 + s
+
+
+@app.post("/api/running/runs")
+def log_run(body: RunIn, session: Session = Depends(get_session)):
+    tz = app.state.today.tz
+    try:
+        seconds = parse_clock(body.time)
+        hh, mm = (int(x) for x in (body.start or "07:00").split(":"))
+        start = datetime.combine(date.fromisoformat(body.date), datetime.min.time(), tz).replace(hour=hh, minute=mm)
+    except ValueError as e:
+        raise HTTPException(400, "Time looks like 31:45 or 1:02:30, and the date like 2026-09-27.") from e
+    r = running.add_run(session, start=start, duration_s=seconds, distance_m=body.miles * running.MILE,
+                        avg_hr=body.avg_hr, time_trial=body.time_trial, notes=body.notes)
+    if not r:
+        raise HTTPException(409, "That run is already logged.")
+    return running.status(session, now_local())
+
+
+@app.delete("/api/running/runs/{run_id}")
+def delete_run(run_id: int, session: Session = Depends(get_session)):
+    r = session.get(running.Run, run_id)
+    if r:
+        session.delete(r)
+        session.commit()
+    return running.status(session, now_local())
+
+
+@app.post("/api/running/propose")
+async def propose_runs(session: Session = Depends(get_session)):
+    result = await running.propose_runs(session, calendar_svc(), actions_svc(), now_local())
+    n, auto = result["proposed"], result["auto"]
+    note = f"{n} run{'s' if n != 1 else ''} to review on Today" if n else "No new runs to put on the calendar"
+    if auto:
+        note += f", {auto} added by your rules"
+    if result["skipped"]:
+        note += f". No free time for: {', '.join(result['skipped'])}"
+    return {**result, "note": note + "."}
+
+
+@app.post("/api/health/token")
+def new_ingest_token(session: Session = Depends(get_session)):
+    """A new secret for Health Auto Export's header. Shown once; the hub keeps only its hash."""
+    return {"token": running.new_token(session), "url": f"{get_settings().public_url.rstrip('/')}/api/health/ingest",
+            "header": "X-Cardinal-Token"}
+
+
+@app.post("/api/health/ingest")
+async def health_ingest(request: Request, session: Session = Depends(get_session),
+                        x_cardinal_token: str | None = Header(default=None)):
+    if not running.token_ok(session, x_cardinal_token):
+        raise HTTPException(401, "Missing or wrong X-Cardinal-Token.")
+    try:
+        payload = await request.json()
+    except ValueError as e:
+        raise HTTPException(400, "Send JSON (Health Auto Export: Export Format → JSON).") from e
+    return running.ingest_auto_export(session, payload, app.state.today.tz)
+
+
+@app.post("/api/health/import")
+async def health_import(file: UploadFile = File(...), session: Session = Depends(get_session)):
+    import os
+    import shutil
+    import tempfile
+
+    fd, path = tempfile.mkstemp(suffix=".zip")
+    try:
+        with os.fdopen(fd, "wb") as out:
+            await asyncio.to_thread(shutil.copyfileobj, file.file, out, 1024 * 1024)
+        try:
+            result = await asyncio.to_thread(running.import_health_export, session, path, app.state.today.tz)
+        except (ValueError, OSError) as e:
+            raise HTTPException(400, str(e)) from e
+        except Exception as e:  # zipfile.BadZipFile and friends
+            raise HTTPException(400, f"Couldn't read that file: {e}") from e
+    finally:
+        os.unlink(path)
+    return {**result, "status": running.status(session, now_local())}
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

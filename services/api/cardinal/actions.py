@@ -71,7 +71,8 @@ def _block_rule(p: dict, agent_name: str) -> tuple[dict, str]:
     earliest, latest = p.get("window", ["08:00", "22:00"])
     cond = {"max_minutes": cap, "earliest": earliest, "latest": latest}
     hours = f"{cap // 60} h" + (f" {cap % 60} min" if cap % 60 else "")
-    return cond, (f"{agent_name} may add study blocks of up to {hours} to your Cardinal calendar, "
+    noun = p.get("noun", "study blocks")
+    return cond, (f"{agent_name} may add {noun} of up to {hours} to your Cardinal calendar, "
                   f"between {earliest} and {latest}. Nothing else. You still get a note with Undo.")
 
 
@@ -83,7 +84,7 @@ def _block_matches(cond: dict, p: dict) -> bool:
 async def _block_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
     item, warning = await svc.calendar.add(
         session, title=p["title"], day=date.fromisoformat(p["date"]), start=p["start"], end=p["end"],
-        kind="reading", course=p.get("course"), notes=p.get("notes"), source=f"action:{a.id}")
+        kind=p.get("item_kind", "reading"), course=p.get("course"), notes=p.get("notes"), source=f"action:{a.id}")
     return {"item_id": item.id, "warning": warning}
 
 
@@ -231,9 +232,9 @@ class Actions:
             e = datetime.combine(d, datetime.min.time(), self.tz).replace(hour=int(p["end"][:2]), minute=int(p["end"][3:5]))
             if s < end and e > start:
                 out.append({"id": f"action:{a.id}", "action_id": a.id, "start": s.isoformat(), "end": e.isoformat(),
-                            "all_day": False, "title": p["title"], "source": "proposed", "kind": "reading",
+                            "all_day": False, "title": p["title"], "source": "proposed", "kind": p.get("item_kind", "reading"),
                             "calendar": f"Proposed by {self.agent_names.get(a.agent_id, a.agent_id)}",
-                            "color": "#a47bff", "deletable": False})
+                            "color": "#ff4d6d" if a.agent_id == "vector" else "#a47bff", "deletable": False})
         return out
 
     # ---------- Rules ----------

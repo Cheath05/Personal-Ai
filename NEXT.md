@@ -1,4 +1,4 @@
-# Next session: Phase 4 (Running) or voice
+# Next session: Phase 5 (Second Brain) or voice
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -120,9 +120,28 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - The rollup was fixed to write to "you" and to use numbers exactly as given; the 4B model still overreaches a little.
 - **Not yet:** push notifications for check-ins (Phase 7; Web Push works for home-screen apps on iOS). Running data in the rollup (Phase 4).
 
+## Phase 4 (built 27 Sep 2026): Running (Vector)
+
+- **`cardinal/running.py`**, all arithmetic:
+  - **VDOT** (Daniels & Gilbert) from the current 5K. Zones: easy 65–72% gives 11:48–12:46/mi at VDOT 30.8, tempo 88% gives 10:05, 400 m at 97.5% gives 2:19, goal 400 m is 1:52.
+  - **`WEEKS`**: the 12-week Sun/Tue/Wed plan, with mile time trials in weeks 4 and 8 and 5K time trials in weeks 6 and 12.
+  - **The plan start** is stored in `Pref` `run_plan_start`: the first Monday after it was first opened. On the hub that's 2026-09-28.
+  - **Time trials** (a checkbox, or distance within 0.9–1.15× of a mile or 5K) set `current_5k_min` / `current_mile_min` via Riegel, so all paces update.
+  - **`match_runs`**: each run counts for at most one session, same day first, then ±1 day. `evaluate` flags easy runs faster than the easy zone.
+  - **Data in:**
+    - Manual log.
+    - `POST /api/health/ingest` for Health Auto Export JSON, with header `X-Cardinal-Token`. Only the token's sha256 is stored.
+    - `POST /api/health/import` for export.zip, streamed with iterparse, covering running workouts plus resting HR / HRV / VO2 max records.
+    - Duplicates are recognized across sources (±3 min, ±5% distance).
+  - **Readiness:** under 6 h of sleep, or resting HR at least 5 above the median, means "take it easy today".
+  - **`propose_runs`**: Vector proposes each planned run as a `calendar.add_block` (item_kind event, noun "runs") at a free time. It prefers 16:30–20:30, and runs daily with the study planner.
+- **Agents with `running` access** (Vector, Delta, Cardinal) get fitness, the week's sessions, recent runs and watch data. The weekly rollup includes runs done/planned and miles.
+- **UI:** the Training view shows the status window (level = VDOT), this week's sessions, log a run, recent runs, the Apple Watch setup (token, export import) and the 12-week table.
+- **Tested:** 80 tests. The demo covered HAE ingest, manual runs, session matching and the pace check.
+
 ## Next
 
-- **Phase 4: Running (Vector).** Health Auto Export from the Apple Watch posts to the hub, then runs, paces, and the run plan in the calendar.
+- **Phase 5: Second Brain (Axiom).** School folder, notes, flashcards, ask-your-notes with citations.
 - **Or Phase 1.6: voice.** Ask the user.
 
 ## Things to keep in mind

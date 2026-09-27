@@ -242,7 +242,10 @@ def week_stats(session: Session, start: date, now: datetime) -> dict:
         streak += 1
         d -= timedelta(days=1)
     done = sum(1 for t in tasks if t.status == "done")
+    from .running import week_summary
+    run = week_summary(session, start, now)
     return {
+        "runs_done": run["runs_done"], "runs_planned": run["runs_planned"], "run_miles": run["miles"],
         "week_start": start.isoformat(), "days_elapsed": len(elapsed),
         "mornings": len(mornings), "evenings": len(evenings),
         "priorities_done": done, "priorities_planned": len(tasks),
@@ -288,7 +291,8 @@ def _stats_text(s: dict) -> str:
         trend = f" (last week {s['energy_prev_avg']})"
     return (f"Morning check-ins: {s['mornings']} of {s['days_elapsed']} days. Evening reviews: {s['evenings']}. "
             f"Priorities done: {comp}. Study blocks done: {s['blocks_done']} of {s['blocks_planned']}. "
-            f"Energy: {energy or 'not logged'}; average {s['energy_avg'] or '-'}{trend}. Check-in streak: {s['streak']} days.")
+            f"Energy: {energy or 'not logged'}; average {s['energy_avg'] or '-'}{trend}. Check-in streak: {s['streak']} days. "
+            f"Runs: {s.get('runs_done', 0)} of {s.get('runs_planned', 0)} planned, {s.get('run_miles', 0)} mi.")
 
 
 def _parse_json(text: str) -> dict:

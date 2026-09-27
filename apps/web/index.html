@@ -148,27 +148,75 @@
 
     <!-- ================= TRAINING ================= -->
     <main class="view" id="v-training" hidden>
-      <div class="vhead"><div><h1>Training</h1><p>Your 12-week mile and 5K block. Paces are starting estimates from a 30:00 5K.</p></div><span class="who">VECTOR [VEC4-0098]</span></div>
-      <div class="grid two">
-        <section class="panel neon">
-          <div class="ph"><span class="t">Weekly structure</span><span class="m">SUN · TUE · WED</span></div>
-          <div class="runs">
-            <div class="run"><span class="d">Sun</span><div><b>Long easy</b><p>3 mi at 11:45–12:45 /mi plus 4 × 20 s strides. Builds to 5–5.5 mi.</p></div></div>
-            <div class="run"><span class="d">Tue</span><div><b>Quality: intervals or tempo</b><p>Odd weeks: 6 × 400 m at ~2:15. Even weeks: 15 min at ~10:00 /mi.</p></div></div>
-            <div class="run"><span class="d">Wed</span><div><b>Easy recovery</b><p>2 mi very easy plus strides. Builds to 3 mi.</p></div></div>
+      <div class="vhead"><div><h1>Training</h1><p id="tr-line">Your 12-week mile and 5K block.</p></div><span class="who">VECTOR [VEC4-0098]</span></div>
+      <div class="grid two training">
+        <section class="panel neon span-all status-window">
+          <div class="ph"><span class="t">Status</span><span class="m" id="tr-week">–</span></div>
+          <div class="sw-grid">
+            <div class="sw-level"><span>LEVEL</span><b id="tr-vdot">–</b><small>VDOT · running fitness</small></div>
+            <div class="sw-stats" id="tr-stats"></div>
+          </div>
+          <div class="sw-weeks" id="tr-weeks" aria-label="Plan progress"></div>
+          <div id="tr-ready"></div>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">This week</span><span class="m" id="tr-tw-meta">SUN · TUE · WED</span></div>
+          <div class="sessions" id="tr-sessions"></div>
+          <div class="row-actions"><button type="button" class="btn" id="tr-propose">Put this week's runs on my calendar</button>
+            <span class="note small" id="tr-propose-note">Vector finds a free time on each run day. Nothing is added until you OK it on Today.</span></div>
+        </section>
+
+        <section class="panel">
+          <div class="ph"><span class="t">Log a run</span><span class="m">15 SECONDS</span></div>
+          <form id="tr-log" class="rv-form">
+            <div class="form-row">
+              <label>Date<input name="date" type="date" required></label>
+              <label>Start<input name="start" type="time" value="17:30"></label>
+            </div>
+            <div class="form-row">
+              <label>Miles<input name="miles" type="number" step="0.01" min="0.1" max="60" required placeholder="3.1"></label>
+              <label>Time<input name="time" required placeholder="31:45" pattern="\d{1,2}(:\d{2}){1,2}"></label>
+              <label>Avg HR<input name="avg_hr" type="number" min="40" max="230" placeholder="optional"></label>
+            </div>
+            <label class="check"><input type="checkbox" name="time_trial"> Time trial (a full-effort mile or 5K: paces recalculate)</label>
+            <input name="notes" maxlength="500" placeholder="Notes (optional)">
+            <div class="row-actions"><button type="submit" class="btn primary">Save run</button><span class="note small" id="tr-log-note"></span></div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="ph"><span class="t">Recent runs</span><span class="m" id="tr-runs-meta">–</span></div>
+          <ul class="list" id="tr-runs"></ul>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">Apple Watch</span><span class="m" id="tr-aw-meta">NOT CONNECTED</span></div>
+          <div class="aw-ways">
+            <div>
+              <h4>Automatic: Health Auto Export</h4>
+              <p class="note small">Sends new runs, resting heart rate, HRV, VO₂ max and sleep every hour. Needs the app's Premium ($24.99 once, 7-day free trial). Your iPhone must have Tailscale on.</p>
+              <ol class="steps">
+                <li>In Health Auto Export: <b>Automations → New → REST API</b>.</li>
+                <li>URL and header: press the button, then paste both.</li>
+                <li>Data: <b>Workouts</b>, plus metrics <b>Resting Heart Rate, Heart Rate Variability, VO2 Max, Sleep Analysis</b>. Format <b>JSON</b>, sync every hour.</li>
+              </ol>
+              <button type="button" class="btn" id="tr-token">Show URL and secret</button>
+              <dl class="kv token" id="tr-token-box" hidden></dl>
+            </div>
+            <div>
+              <h4>Free: import your Apple Health export</h4>
+              <p class="note small">Brings in every run from the last year at once. In the Health app: your picture → <b>Export All Health Data</b>, save it to Files, then upload it here. It can be a big file.</p>
+              <form id="tr-import" class="inline-add"><input type="file" name="file" accept=".zip,application/zip" required><button type="submit" class="btn">Import</button></form>
+              <p class="note small" id="tr-import-note"></p>
+            </div>
           </div>
         </section>
-        <section class="panel">
-          <div class="ph"><span class="t">Targets and zones</span><span class="m">ESTIMATES</span></div>
-          <dl class="kv">
-            <dt>Mile</dt><dd>8:00 → about 7:30</dd>
-            <dt>5K</dt><dd>30:00 → about 27:30</dd>
-            <dt>Easy</dt><dd>11:45–12:45 /mi</dd>
-            <dt>Tempo</dt><dd>about 10:00 /mi</dd>
-            <dt>Interval</dt><dd>400 m in about 2:15</dd>
-          </dl>
-          <p class="note">Apple Watch data (Phase 4) will adjust these after every run and time trial. Ask Vector anything in the Nexus meanwhile.</p>
-        </section>
+
+        <details class="panel span-all plan12">
+          <summary><span class="t">The 12-week plan</span></summary>
+          <table class="plan-table" id="tr-plan"></table>
+        </details>
       </div>
     </main>
 

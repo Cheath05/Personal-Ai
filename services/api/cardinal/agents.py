@@ -25,7 +25,8 @@ Your role:
 Today is {today}.{memory}{data}"""
 
 ACCESS_NAMES = {"calendar": "their calendar", "email": "their inboxes (senders and subjects)",
-                "blackboard": "Blackboard due dates", "tasks": "their daily priorities and check-ins"}
+                "blackboard": "Blackboard due dates", "tasks": "their daily priorities and check-ins",
+                "running": "their runs, training plan and Apple Watch data"}
 
 MEMORY_BLOCK = """
 
