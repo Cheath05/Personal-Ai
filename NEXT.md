@@ -1,4 +1,4 @@
-# Next session: Phase 1.6 (voice) or Phase 7 (hardening)
+# Next session: Phase 1.6 (voice)
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -222,9 +222,42 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Today → Connections → **Reconnect** Personal Google to grant drafts. If Google refuses, add `gmail.compose` under Google Auth Platform → Data Access.
   - Review → Focus → Connect a laptop → Make a secret, then run the Mac installer. The G14 installer is for a Windows session.
 
+## Phase 7 (built 27 Sep 2026): Hardening
+
+- **Passkey lock** (`cardinal/auth.py`, the `webauthn` package; tables `Passkey` and `LoginSession`).
+  - **Off until the user turns it on** (Pref `login_required`), so the deploy can't lock anyone out. In Access → Security: add a passkey on each device, then Turn the lock on. That needs a browser signed in with a passkey.
+  - **While locked,** `auth.gate` (middleware) returns 401 `{"locked": true}` for every `/api` path outside `auth.OPEN`. Writes also need a same-origin `Origin`.
+    - `OPEN`: health, the Google callback (checked by its state), sign-in, and the token-checked script endpoints (Health ingest, ActivityWatch ingest, backup download).
+    - Pages and static files stay public (they hold no data), so the app can load and show its lock screen. **tailscale serve proxies from 127.0.0.1, so nothing may trust localhost.**
+  - **Sessions:** a random cookie `cardinal_session` (HttpOnly, SameSite=Lax, Secure on https), 60-day sliding expiry, sha256 in the DB.
+  - **Passkeys:** discoverable, with user verification required. The RP ID and origin come from `CARDINAL_PUBLIC_URL`.
+  - **Turning the lock off** needs a passkey check in the last 5 minutes (`verified_at`). The last passkey can't be removed while locked.
+  - **New device:** a one-time code (10 minutes, 5 tries, hash in Pref `login_code`) from Access → Security → Sign in another device, or from `cardinal.admin code` on the hub.
+  - **Recovery on the hub:** `.venv/bin/python -m cardinal.admin status|code|unlock|sign-out`.
+  - **Tested:** `tests/test_hardening.py` has a software authenticator (real P-256 signatures) covering the whole ceremony, replay, phishing origin, counter and codes. Headless Chrome's virtual authenticator ran the real UI: add, lock, 401, lock screen, Face-ID-style sign-in.
+- **Notifications** (`cardinal/push.py`, table `PushSub`): Web Push with VAPID.
+  - The key is `data/push.pem` (0600, made on first use, not in git or backups).
+  - Payloads are encrypted per device (aes128gcm via `pywebpush`'s encoder) and sent with httpx. 404/410 removes the subscription.
+  - **Kinds:** briefing (after the scheduled one), checkin (at its time, within 3 h), approvals (pending 10+ min, once each), urgent_mail (after an hourly sort; not the first-ever sort), system (a failed restore drill).
+  - **Settings:** quiet hours (default 22:00–06:00) and "hide details on the lock screen".
+  - **Service worker:** `sw.js` shows the notification and opens `data.url` on tap. PNG icons were added for notifications and the iOS Home Screen.
+  - **Tested:** the payload is decrypted in the tests with the device key. Headless Chrome subscribed through FCM, and "Send a test" was delivered.
+- **Backups:**
+  - `infra/backup-db.sh` now also mirrors `data/files`.
+  - `cardinal/backups.py` runs a weekly **restore drill** (scheduler, after 04:00; also Access → Backups → Test a restore now). It copies the newest backup to a temp dir, runs `integrity_check`, compares row counts with the live DB, checks age (warns after 36 h), and checks that Google tokens decrypt with `secret.key`. The result is in Pref `restore_drill`.
+  - **Second copy:** `scripts/install-backup-copy-mac.sh` (launchd, daily 12:00) downloads `/api/backups/download` with an `X-Cardinal-Token` from Access → Backups → Copy to this Mac. It checks `quick_check` before keeping a copy, and keeps 14. It uses HTTPS, not SSH, because **Tailscale SSH to the hub now asks for a browser re-check** (its link expires) and would break an unattended job.
+- **Security headers:** CSP on HTML (`script-src 'self'`; Google Fonts allowed), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, HSTS on https, and `no-store` on `/api`. No CSP violations on any view.
+- **Postgres: not needed.** The hub database is about 3.3 MB. `/api/brain`, `/api/review` and `/api/inbox` answer in 80–110 ms over Tailscale.
+  - `/api/today` took 14.5 s once. That's Google, Blackboard and calendar-link fetches on a stale cache, not the database. It's worth a look (fetch in parallel, cache longer).
+- **Needs the user:**
+  - Add passkeys on the iPhone (from the Home Screen app), Mac and G14, then turn the lock on.
+  - Turn on notifications on each device (iPhone: from the Home Screen app).
+  - Optionally, the Mac backup copy.
+  - Complete Tailscale's SSH check in a browser if SSH asks again.
+
 ## Next
 
-- **Phase 1.6: voice** or **Phase 7: hardening** (push notifications for check-ins and urgent mail, passkey login). Ask the user.
+- **Phase 1.6: voice.** Also consider: speeding up `/api/today`, and a Proxmox-level VM backup (vzdump to a USB drive or NAS) for the whole machine.
 
 ## Things to keep in mind
 

@@ -17,10 +17,13 @@ from sqlmodel import Session, col, select
 
 from . import (
     appusage,
+    auth,
+    backups,
     brain,
     briefing,
     planner,
     prefs,
+    push,
     relay,
     research,
     review,
@@ -43,6 +46,7 @@ from .db import (
     Flashcard,
     Memory,
     Message,
+    PushSub,
     Quiz,
     SyllabusImport,
     Task,
@@ -95,6 +99,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Cardinal", lifespan=lifespan)
+app.include_router(auth.router)
+app.middleware("http")(auth.gate)
+
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; "
+       "manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Added outside the passkey gate, so its answers get them too."""
+    r = await call_next(request)
+    h = r.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("Referrer-Policy", "same-origin")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=(), microphone=(self)")
+    if get_settings().public_url.startswith("https://"):
+        h.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if h.get("content-type", "").startswith("text/html"):
+        h.setdefault("Content-Security-Policy", CSP)
+    if request.url.path.startswith("/api/"):
+        h.setdefault("Cache-Control", "no-store")
+    return r
 
 
 def pretty_model(model: str) -> str:
@@ -1332,6 +1360,125 @@ async def agents_status(session: Session = Depends(get_session)):
             level, reason = "ok", "App usage isn't connected (optional)."
         out[a.id] = {"level": level, "reason": reason}
     return out
+
+
+# ---------- Notifications (Web Push) ----------
+
+@app.get("/api/push/key")
+def push_key():
+    return {"key": push.public_key()}
+
+
+class PushSubIn(BaseModel):
+    subscription: dict
+    device: str | None = Field(default=None, max_length=40)
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(body: PushSubIn, session: Session = Depends(get_session)):
+    try:
+        row = push.subscribe(session, body.subscription, body.device)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"id": row.id}
+
+
+class PushEndpointIn(BaseModel):
+    endpoint: str = Field(max_length=2000)
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(body: PushEndpointIn, session: Session = Depends(get_session)):
+    for row in session.exec(select(PushSub).where(PushSub.endpoint == body.endpoint)).all():
+        session.delete(row)
+    session.commit()
+    return {"ok": True}
+
+
+@app.get("/api/push/settings")
+def push_settings(session: Session = Depends(get_session)):
+    devices = session.exec(select(PushSub).order_by(col(PushSub.created))).all()
+    return {**push.settings_json(session),
+            "devices": [{"id": d.id, "device": d.device, "endpoint": d.endpoint,
+                         "last_ok": d.last_ok.isoformat() if d.last_ok else None} for d in devices]}
+
+
+class PushSettingsIn(BaseModel):
+    kinds: dict[str, bool] | None = None
+    quiet: str | None = Field(default=None, pattern=r"^(|([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d)$")
+    private: bool | None = None
+
+
+@app.post("/api/push/settings")
+def save_push_settings(body: PushSettingsIn, session: Session = Depends(get_session)):
+    push.save_settings(session, body.kinds, body.quiet, body.private)
+    return push_settings(session)
+
+
+@app.delete("/api/push/devices/{sub_id}")
+def push_forget_device(sub_id: int, session: Session = Depends(get_session)):
+    row = session.get(PushSub, sub_id)
+    if row:
+        session.delete(row)
+        session.commit()
+    return {"ok": True}
+
+
+class PushTestIn(BaseModel):
+    endpoint: str | None = Field(default=None, max_length=2000)
+
+
+@app.post("/api/push/test")
+async def push_test(body: PushTestIn, session: Session = Depends(get_session)):
+    only = None
+    if body.endpoint:
+        row = session.exec(select(PushSub).where(PushSub.endpoint == body.endpoint)).first()
+        if not row:
+            raise HTTPException(404, "This device isn't subscribed.")
+        only = row.id
+    n = await push.notify(session, "test", "Cardinal", "Notifications work on this device.", "/#access",
+                          force=True, only=only)
+    if not n:
+        raise HTTPException(409, "No device accepted it. Turn notifications off and on again on that device.")
+    return {"sent": n}
+
+
+# ---------- Backups and restore drills ----------
+
+def live_db_path() -> Path:
+    return Path(get_settings().database_url.removeprefix("sqlite:///"))
+
+
+@app.get("/api/backups")
+def get_backups(session: Session = Depends(get_session)):
+    files = backups.list_backups()
+    return {"dir": str(backups.backup_dir()), "drill": json.loads(prefs.get(session, "restore_drill") or "null"),
+            "backups": [{"name": f.name, "size": f.stat().st_size,
+                         "modified": datetime.fromtimestamp(f.stat().st_mtime, UTC).isoformat()} for f in files[:8]],
+            "count": len(files)}
+
+
+@app.post("/api/backups/token")
+def backups_token(session: Session = Depends(get_session)):
+    """A secret for scripts/install-backup-copy-mac.sh, so the Mac can fetch the newest backup."""
+    return {"token": running.new_token(session, "backup_token_hash"), "hub": get_settings().public_url.rstrip("/")}
+
+
+@app.get("/api/backups/download")
+def backups_download(session: Session = Depends(get_session), x_cardinal_token: str | None = Header(default=None)):
+    if not running.token_ok(session, x_cardinal_token, "backup_token_hash"):
+        raise HTTPException(401, "Missing or wrong X-Cardinal-Token.")
+    files = [f for f in backups.list_backups() if f.name.startswith("cardinal-")] or backups.list_backups()
+    if not files:
+        raise HTTPException(404, "No backups yet.")
+    return FileResponse(files[0], media_type="application/octet-stream", filename=files[0].name)
+
+
+@app.post("/api/backups/drill")
+async def run_drill(session: Session = Depends(get_session)):
+    result = await asyncio.to_thread(backups.drill, live_db_path())
+    prefs.put(session, "restore_drill", json.dumps(result))
+    return result
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

@@ -356,6 +356,45 @@ class AppUsage(SQLModel, table=True):
     seconds: int = 0
 
 
+class Passkey(SQLModel, table=True):
+    """A passkey that can unlock Cardinal (Face ID, Touch ID, Windows Hello). Only its public key is stored."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    credential_id: str = Field(index=True, unique=True)  # base64url
+    public_key: str  # base64url COSE key
+    sign_count: int = 0
+    name: str = "Passkey"  # the device you made it on
+    created: datetime = Field(default_factory=utcnow)
+    last_used: datetime | None = None
+    synced: bool = False  # backed up by iCloud Keychain / Google Password Manager
+
+
+class LoginSession(SQLModel, table=True):
+    """A signed-in browser. The cookie holds a random token; only its hash is stored."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    token_hash: str = Field(index=True, unique=True)
+    passkey_id: int | None = Field(default=None, index=True)
+    device: str | None = None
+    created: datetime = Field(default_factory=utcnow)
+    last_seen: datetime = Field(default_factory=utcnow)
+    verified_at: datetime = Field(default_factory=utcnow)  # last passkey check (turning the lock off needs a fresh one)
+    expires: datetime
+
+
+class PushSub(SQLModel, table=True):
+    """A device that gets notifications (Web Push). Messages are end-to-end encrypted to the device."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    endpoint: str = Field(index=True, unique=True)
+    p256dh: str
+    auth: str
+    device: str | None = None
+    created: datetime = Field(default_factory=utcnow)
+    last_ok: datetime | None = None
+    failures: int = 0
+
+
 _engine = None
 
 

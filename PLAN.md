@@ -513,7 +513,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | 4. Running ✅ | Hub + iPhone | Vector's 12-week plan and VDOT paces (recalculated after time trials), runs checked against each session, status window, runs proposed on the calendar, Apple Watch data via Health Auto Export (automatic) or an Apple Health export (free), manual logging, readiness from sleep and resting HR |
 | 5. Second Brain ✅ | Hub | Library (PDF, slides, Word, photos, links, notes) with page-cited search (SQLite FTS5), ask-your-notes at three levels, summaries and key terms, FSRS flashcards, exam mode with verified answer keys, dates from files, Core Memory ring |
 | 6. Full Workforce ✅ | Hub + laptops | Relay sorts both inboxes hourly, writes replies you edit, saves Gmail drafts and sends only on your tap; dates and to-dos from email; Radix web research with cited sources you can save to the Second Brain; ActivityWatch app usage from the Mac and G14 (Focus panel, Sigma's focus-hour patterns); Cardinal hands requests to teammates; a status light per agent |
-| 7. Hardening | Server | Push notifications, login with a passkey, Postgres if SQLite ever gets slow, restore drills |
+| 7. Hardening ✅ | Server | Passkey lock (Face ID / Touch ID / Windows Hello) with one-time codes for new devices and SSH recovery; encrypted Web Push notifications (briefing, check-ins, waiting approvals, urgent mail) with quiet hours; nightly backups now include uploaded files, weekly restore drills, optional copy to the Mac; security headers (CSP). Postgres not needed: the database is ~4 MB |
 
 ## 11. Repo layout
 

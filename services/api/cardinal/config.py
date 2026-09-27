@@ -71,6 +71,12 @@ def _load_yaml(name: str, override: Path | None = None) -> dict[str, Any]:
     raise FileNotFoundError(f"No config found for {name}")
 
 
+def data_dir() -> Path:
+    """Where the database lives (and its neighbours: secret.key, the push key, uploaded files)."""
+    url = get_settings().database_url
+    return Path(url.removeprefix("sqlite:///")).parent if url.startswith("sqlite:///") else ROOT / "data"
+
+
 def load_brains_config() -> dict[str, Any]:
     return _load_yaml("brains", get_settings().brains_file)
 

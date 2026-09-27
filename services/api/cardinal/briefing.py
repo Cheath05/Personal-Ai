@@ -5,13 +5,15 @@ an empty one would just invite the model to make things up.
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
-from . import prefs
+from . import backups, prefs, push
 from .agents import Agent
 from .db import Briefing, get_engine
 from .router import BrainRouter, NoBrainAvailable
@@ -101,6 +103,7 @@ async def run_scheduler(state, settings) -> None:
                                                    user_name=settings.user_name)
                         prefs.put(session, "inbox_sorted_at", datetime.now(tz).isoformat())
                         log.info("Relay sorted %s new emails", r["sorted"])
+                        await push.after_sort(session, datetime.now(tz))
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -162,8 +165,33 @@ async def run_scheduler(state, settings) -> None:
                         b = await write_briefing(session, state.router, state.agents["ordinal"], state.today,
                                                  trigger="scheduled")
                         log.info("Briefing written for %s on %s", b.day, b.brain)
+                        await push.after_briefing(session, b.text, now)
         except asyncio.CancelledError:
             raise
         except Exception:  # keep the scheduler alive; the next check retries after RETRY_AFTER
             log.exception("Scheduled briefing failed")
+        try:  # notifications: check-ins that are due, proposals waiting 10+ minutes
+            now = datetime.now(tz)
+            with Session(get_engine()) as session:
+                await push.tick(session, now, settings)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Notifications failed")
+        try:  # weekly restore drill (after the 03:30 backup)
+            now = datetime.now(tz)
+            with Session(get_engine()) as session:
+                last = json.loads(prefs.get(session, "restore_drill") or "null")
+                if now.hour >= 4 and settings.database_url.startswith("sqlite:///") and (
+                        not last or now - datetime.fromisoformat(last["checked_at"]) >= timedelta(days=7)):
+                    result = await asyncio.to_thread(backups.drill, Path(settings.database_url.removeprefix("sqlite:///")))
+                    prefs.put(session, "restore_drill", json.dumps(result))
+                    log.info("Restore drill: %s", "ok" if result["ok"] else "; ".join(result["problems"]))
+                    if not result["ok"]:
+                        await push.notify(session, "system", "Cardinal · Backups need a look",
+                                          result["problems"][0], "/#access", now=now)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Restore drill failed")
         await asyncio.sleep(30)

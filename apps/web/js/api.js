@@ -21,6 +21,7 @@ async function request(path, options = {}) {
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
   if (!res.ok) {
+    if (res.status === 401 && data?.locked) window.dispatchEvent(new Event("cardinal:locked"));
     const detail = data && typeof data.detail === "string" ? data.detail : `Request failed (${res.status}).`;
     throw new Error(detail);
   }
@@ -33,7 +34,10 @@ async function upload(path, file) {
   const res = await fetch(path, { method: "POST", body: form, headers: { "X-Cardinal-Device": DEVICE } });
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error(data && typeof data.detail === "string" ? data.detail : `Upload failed (${res.status}).`);
+  if (!res.ok) {
+    if (res.status === 401 && data?.locked) window.dispatchEvent(new Event("cardinal:locked"));
+    throw new Error(data && typeof data.detail === "string" ? data.detail : `Upload failed (${res.status}).`);
+  }
   return data;
 }
 
@@ -112,4 +116,25 @@ export const api = {
   appsToken: () => request("/api/apps/token", { method: "POST" }),
   appsDay: (date) => request(`/api/apps/day${date ? `?date=${date}` : ""}`),
   agentStatus: () => request("/api/agents/status"),
+  authStatus: () => request("/api/auth/status"),
+  registerOptions: (code) => request("/api/auth/register/options", { method: "POST", body: { code } }),
+  registerVerify: (body) => request("/api/auth/register/verify", { method: "POST", body }),
+  loginOptions: () => request("/api/auth/login/options", { method: "POST" }),
+  loginVerify: (body) => request("/api/auth/login/verify", { method: "POST", body }),
+  logout: () => request("/api/auth/logout", { method: "POST" }),
+  setLock: (on) => request("/api/auth/lock", { method: "POST", body: { on } }),
+  loginCode: () => request("/api/auth/code", { method: "POST" }),
+  passkeys: () => request("/api/auth/passkeys"),
+  deletePasskey: (id) => request(`/api/auth/passkeys/${id}`, { method: "DELETE" }),
+  endSession: (id) => request(`/api/auth/sessions/${id}`, { method: "DELETE" }),
+  pushKey: () => request("/api/push/key"),
+  pushSubscribe: (subscription) => request("/api/push/subscribe", { method: "POST", body: { subscription, device: DEVICE } }),
+  pushUnsubscribe: (endpoint) => request("/api/push/unsubscribe", { method: "POST", body: { endpoint } }),
+  pushSettings: () => request("/api/push/settings"),
+  savePushSettings: (body) => request("/api/push/settings", { method: "POST", body }),
+  pushForget: (id) => request(`/api/push/devices/${id}`, { method: "DELETE" }),
+  pushTest: (endpoint) => request("/api/push/test", { method: "POST", body: { endpoint } }),
+  backups: () => request("/api/backups"),
+  runDrill: () => request("/api/backups/drill", { method: "POST" }),
+  backupToken: () => request("/api/backups/token", { method: "POST" }),
 };

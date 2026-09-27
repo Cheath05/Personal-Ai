@@ -125,6 +125,28 @@ It asks for the Client ID, the Client secret and your Blackboard calendar link, 
 
 Sign-in tokens are encrypted on the hub. The key is in `data/secret.key`, which is not in the backups. Disconnect any time from Today, or at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
+## Lock it with passkeys, and get notifications (Phase 7)
+
+**Passkeys.** On each device you use, open Cardinal → **Access → Security → Add a passkey on this device** (Face ID, Touch ID or Windows Hello). Then press **Turn the lock on**. After that, every browser needs its passkey.
+
+- **A new device:** on a signed-in one, press **Sign in another device** to get a one-time code. On the new device, open Cardinal → **New device? Use a one-time code**.
+- A passkey made on the iPhone also works on the Mac through iCloud Keychain.
+- **Locked out?** SSH to the hub and run:
+
+  ```bash
+  ssh usr1@cardinal
+  cd ~/Personal-Ai/services/api
+  .venv/bin/python -m cardinal.admin code     # a one-time code for a new passkey
+  .venv/bin/python -m cardinal.admin unlock   # or turn the lock off
+  ```
+
+**Notifications.** On the iPhone, open Cardinal **from its Home Screen icon** (iOS only allows notifications there). Then go to **Access → Notifications → Turn on for this device**. Do the same on the Mac and G14 browsers.
+
+- You get pings for the morning briefing, check-ins, anything waiting 10 minutes for your OK, and urgent email.
+- Quiet hours default to 22:00–06:00.
+
+**Backups.** The hub copies its memory and your uploaded files every night, and checks weekly that the newest copy restores (**Access → Backups**). For a second copy on the Mac: **Access → Backups → Copy to this Mac → Make a secret**, then run `./scripts/install-backup-copy-mac.sh` and paste it.
+
 ## Tests
 
 ```bash

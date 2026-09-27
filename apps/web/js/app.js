@@ -5,6 +5,7 @@ import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
 import { createReview } from "./review.js";
 import { createRunning } from "./running.js";
+import { createSecurity } from "./security.js";
 import { createWorkforce } from "./workforce.js";
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +33,7 @@ let reviewUI = null;
 let runningUI = null;
 let brainUI = null;
 let workforce = null;
+let security = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -71,7 +73,7 @@ function go(view) {
   document.body.dataset.view = view;
   nexus?.setView(view);
   history.replaceState(null, "", `#${view}`);
-  if (view === "access") refreshAccess();
+  if (view === "access") { refreshAccess(); security?.refresh(); }
   if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); workforce?.refreshInbox(); }
   if (view === "review") { reviewUI?.refresh(); workforce?.refreshFocus(); }
   if (view === "training") runningUI?.refresh();
@@ -722,4 +724,5 @@ async function boot() {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 }
+security = createSecurity({ toast });  // before boot, so a locked hub shows the sign-in screen
 boot();

@@ -15,12 +15,14 @@ dependencies = [
     "pydantic-settings>=2.4",
     "pypdf>=6.19.0",
     "python-multipart>=0.0.32",
+    "pywebpush>=2.5.0",
     "pyyaml>=6.0",
     "rapidocr>=3.9.2",
     "recurring-ical-events>=3.8.2",
     "sqlmodel>=0.0.22",
     "tzdata",
     "uvicorn[standard]>=0.30",
+    "webauthn>=3.0.1",
 ]
 
 [dependency-groups]

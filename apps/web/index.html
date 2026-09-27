@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#02050d">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Cardinal</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Michroma&family=Oxanium:wght@300;400;500;600;700&display=swap">
@@ -422,6 +424,46 @@
           <div class="ph"><span class="t">Usage this month</span><span class="m" id="usage-month">–</span></div>
           <div id="usage-full"></div>
         </section>
+        <section class="panel sec-panel">
+          <div class="ph"><span class="t">Security</span><span class="m" id="sec-meta">PASSKEY LOCK</span></div>
+          <div class="sec-state" id="sec-state"></div>
+          <div class="row-actions" id="sec-actions"></div>
+          <p class="note small" id="sec-note"></p>
+          <p class="fo-h">Passkeys</p>
+          <ul class="list" id="sec-keys"></ul>
+          <p class="fo-h">Signed-in browsers</p>
+          <ul class="list" id="sec-sessions"></ul>
+          <div class="sec-code" id="sec-code" hidden></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Notifications</span><span class="m" id="nt-meta">–</span></div>
+          <div class="row-actions" id="nt-actions"></div>
+          <p class="note small" id="nt-note"></p>
+          <div class="nt-kinds" id="nt-kinds"></div>
+          <div class="nt-quiet">
+            <label class="tog"><input type="checkbox" id="nt-quiet-on"> Quiet hours</label>
+            <input type="time" id="nt-quiet-from" aria-label="Quiet from"> <span class="note small">to</span>
+            <input type="time" id="nt-quiet-to" aria-label="Quiet until">
+          </div>
+          <label class="tog"><input type="checkbox" id="nt-private"> Hide details on the lock screen</label>
+          <p class="fo-h">Devices</p>
+          <ul class="list" id="nt-devices"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Backups</span><span class="m" id="bk-meta">–</span></div>
+          <div class="bk-state" id="bk-state"></div>
+          <div class="row-actions"><button type="button" class="btn" id="bk-drill">Test a restore now</button><span class="note small" id="bk-note"></span></div>
+          <ul class="list" id="bk-list"></ul>
+          <p class="note small">Every night at 03:30 the hub copies its memory and your uploaded files to <code>~/cardinal-backups</code> (14 days kept), plus a copy before every update. Once a week Cardinal restores the newest one into a scratch folder and checks it.</p>
+          <details class="fo-connect"><summary>Copy to this Mac</summary>
+            <p class="note small">A second copy off the server, so one dead SSD can't take Cardinal's memory. The Mac downloads the newest backup once a day and keeps 14.</p>
+            <ol class="steps">
+              <li><button type="button" class="btn" id="bk-token">Make a secret</button> <code id="bk-token-val" hidden></code> <button type="button" class="linkish" id="bk-token-copy" hidden>Copy</button></li>
+              <li>In Terminal, inside the Personal-Ai folder: <code>./scripts/install-backup-copy-mac.sh</code></li>
+              <li>Paste the secret when it asks.</li>
+            </ol>
+          </details>
+        </section>
         <section class="panel">
           <div class="ph"><span class="t">Trust rules</span><span class="m">REMEMBERED APPROVALS</span></div>
           <ul class="list" id="rules-list"></ul>
@@ -443,6 +485,24 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <!-- Passkey lock -->
+  <div class="lock" id="lock" hidden>
+    <div class="lock-card panel neon">
+      <div class="lock-mark" aria-hidden="true"></div>
+      <h2>Cardinal is locked</h2>
+      <p class="note">Sign in with the passkey on this device: Face ID, Touch ID or Windows Hello.</p>
+      <div class="row-actions lock-row"><button type="button" class="btn primary" id="lock-in">Sign in with passkey</button></div>
+      <details class="lock-new"><summary>New device? Use a one-time code</summary>
+        <p class="note small">On a signed-in device: Access → Security → Sign in another device. Or on the hub: <code>.venv/bin/python -m cardinal.admin code</code>.</p>
+        <form id="lock-code-form" class="lock-code-form">
+          <input name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="ABCD-EFGH" required aria-label="One-time code">
+          <button type="submit" class="btn">Make a passkey here</button>
+        </form>
+      </details>
+      <p class="note small lock-err" id="lock-err" role="alert"></p>
+    </div>
   </div>
 
   <!-- Calendar: event details -->
