@@ -422,7 +422,13 @@ function renderToday(t) {
         : g.connected ? `${g.email || "Connected"}${g.gmail === false ? " · Gmail not granted" : ""}${g.calendar === false ? " · Calendar not granted" : ""}`
         : g.slot === "school" ? "Your UMBC account (may be blocked by UMBC)" : "Calendar and Gmail, read-only"));
     li.append(info);
-    if (s?.status === "error") li.append(el("span", "tag bad", "Error"));
+    if (g.connected && s?.status === "error") {
+      // Usually an expired sign-in (Google "Testing" apps expire weekly). One tap fixes it.
+      info.lastChild.textContent = s.detail || "Sign-in needs renewing";
+      const again = el("a", "btn", "Reconnect");
+      again.href = `/api/google/connect?slot=${g.slot}`;
+      li.append(again);
+    }
     if (g.connected) {
       const btn = el("button", "linkish", "Disconnect");
       btn.type = "button";

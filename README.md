@@ -88,32 +88,38 @@ If Cardinal doesn't come back healthy, the hub rolls back to the previous commit
 
 Cardinal reads your calendar, both inboxes (senders and subjects) and Blackboard due dates. It can't change anything yet.
 
-**1. Create a Google Cloud project (free, once).** Go to [console.cloud.google.com](https://console.cloud.google.com), signed in as your personal Gmail.
+**1. Create a Google Cloud project (free, once).** Go to [console.cloud.google.com](https://console.cloud.google.com), signed in as your personal Gmail. Don't add a billing account; these APIs don't need one.
 
 1. Create a project named **Cardinal**.
 2. **APIs & Services → Library:** enable the **Google Calendar API** and the **Gmail API**.
 3. **Google Auth Platform → Get started:**
    - App name `Cardinal`, with your Gmail as the support email.
    - Audience: **External**.
-4. **Audience → Publish app**, so the status reads **In production**. In "Testing", Google signs you out every 7 days.
+4. **Audience → Test users:** add your personal and UMBC addresses. The app stays in **Testing**, so Google asks you to reconnect every 7 days, which is one tap on Today.
 5. **Clients → Create client:**
    - Type: **Web application**.
    - Authorized redirect URI: `https://cardinal.tailaf3b0c.ts.net/api/google/callback`
-   - Keep the page with the Client ID and secret open.
 
-**2. Give them to the hub**, from a terminal on the Mac. Each command asks for the value with hidden typing, so it never shows on screen or in chat:
+**Optional, to stop the weekly reconnects:** switch the app to "In production".
+
+1. **Branding:**
+   - Homepage: `https://cardinal.tailaf3b0c.ts.net/`
+   - Privacy policy: `https://cardinal.tailaf3b0c.ts.net/privacy.html`
+   - Authorized domain: `tailaf3b0c.ts.net`
+   - Don't upload a logo, because that forces Google's review.
+2. Then **Audience → Publish app**. If Google refuses the domain, stay in Testing.
+
+**2. Give them to the hub.** From a terminal on the Mac, run:
 
 ```bash
-ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh GOOGLE_CLIENT_ID'
-ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh GOOGLE_CLIENT_SECRET'
-ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh CARDINAL_BLACKBOARD_ICS_URL'
+ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh'
 ```
 
-The Blackboard link is at **Blackboard → Calendar → settings → Get external calendar link**.
+It asks for the Client ID, the Client secret and your Blackboard calendar link, with hidden typing, so they never show on screen or in chat. Press Enter to skip any of them. The Blackboard link is at **Blackboard → Calendar → settings → Get external calendar link**.
 
 **3. Connect.** Open Cardinal → **Today** → **Connect** next to Personal Google, then UMBC Google.
 
-- Google will warn "Google hasn't verified this app". That's expected, because you're its developer. Choose **Advanced → Go to Cardinal**.
+- Google may say "Google hasn't verified this app". That's expected, because you're its developer. Choose **Continue**, or **Advanced → Go to Cardinal**.
 - Leave both boxes (Calendar and Gmail) ticked.
 - If UMBC shows "Access blocked", its admins don't allow outside apps. Instead, forward UMBC mail to your Gmail and share your UMBC calendar with your Gmail account.
 

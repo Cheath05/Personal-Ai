@@ -47,3 +47,8 @@ def test_credit_topup_shows_in_summary(client):
 def test_web_app_is_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "Cardinal" in r.text
+
+
+def test_privacy_policy_is_public_page(client):
+    r = client.get("/privacy.html")
+    assert r.status_code == 200 and "Google API Services User Data Policy" in r.text
