@@ -87,12 +87,14 @@ class BrainRouter:
         return True, None
 
     async def run(self, session: Session, *, agent_id: str, job: str, system: str, messages: list[dict],
-                  force_claude: bool = False, check: Check = basic_check) -> RouteResult:
+                  force_claude: bool = False, check: Check = basic_check,
+                  json_schema: dict | None = None) -> RouteResult:
         cfg = self.job_config(job)
         policy, max_tokens, effort = cfg["policy"], int(cfg["max_tokens"]), cfg.get("effort")
         claude = self.claude.with_model(self.claude_tiers.get(cfg["tier"], self.claude_tiers["default"]))
         est_input = sum(len(m["content"]) for m in messages) // 3 + len(system) // 3
         attempts: list[Attempt] = []
+        extra = {"json_schema": json_schema} if json_schema else {}
 
         async def try_claude(reason: str) -> RouteResult | None:
             allowed, why_not = self._claude_allowed(session, job, force_claude, claude.model, max_tokens, est_input)
@@ -100,7 +102,7 @@ class BrainRouter:
                 attempts.append(Attempt("claude", claude.model, False, why_not))
                 return None
             try:
-                reply = await claude.chat(system, messages, max_tokens=max_tokens, effort=effort)
+                reply = await claude.chat(system, messages, max_tokens=max_tokens, effort=effort, **extra)
             except BrainError as e:
                 attempts.append(Attempt("claude", claude.model, False, str(e)))
                 return None
@@ -123,7 +125,7 @@ class BrainRouter:
         for brain in await self.online_local(cfg["lane"]):
             for _ in range(self.local_attempts):
                 try:
-                    reply = await brain.chat(system, messages, max_tokens=max_tokens)
+                    reply = await brain.chat(system, messages, max_tokens=max_tokens, **extra)
                 except BrainError as e:
                     attempts.append(Attempt(brain.name, brain.model, False, str(e)))
                     local_failure = str(e)

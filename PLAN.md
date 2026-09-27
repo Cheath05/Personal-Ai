@@ -500,6 +500,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | 1.5. Hub on Proxmox ✅ | Server | Move the hub and database to the Ubuntu VM, Tailscale HTTPS, install on the iPhone, background brain on the server CPU, nightly backups. Moved up from Phase 7 so all devices share one memory early. |
 | 1.6. Voice | Mac + G14 + iPhone | Pipecat voice (Whisper, Kokoro, Chatterbox-Turbo), talking to agents out loud |
 | 2a. Life Dashboard: read ✅ | Hub | Google sign-in (read-only, encrypted tokens), Calendar + Gmail for personal and UMBC, Blackboard feed, Today view, Ordinal's 6:00 briefing, per-agent data access enforced in code |
+| 2a+. Calendar ✅ | Hub | Day calendar view (a week back), add/remove your own items, "Cardinal" Google calendar that shows in Apple Calendar, iCloud/other calendar links, syllabus import (link, photo, PDF, text) with review before adding |
 | 2b. Life Dashboard: act | Hub | Action Preview queue, **trust rules**, Activity Log, first actions (Cardinal calendar blocks, study blocks from Blackboard due dates) |
 | 3. Executive Assistant | Mac | Delta check-ins and weekly rollup, Core Memory v1 |
 | 4. Running | Mac + iPhone | Health Auto Export, Vector, pace zones, run plan |

@@ -26,7 +26,8 @@ class ClaudeBrain:
         return self._client is not None
 
     async def chat(self, system: str, messages: list[dict], *, max_tokens: int,
-                   effort: str | None = None) -> BrainReply:
+                   effort: str | None = None, json_schema: dict | None = None) -> BrainReply:
+        # json_schema is enforced for local brains; Claude follows the JSON instructions in the prompt.
         if self._client is None:
             raise BrainError("No Anthropic API key is set.")
         extra = {}

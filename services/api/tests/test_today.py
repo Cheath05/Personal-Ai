@@ -8,10 +8,11 @@ from fastapi.testclient import TestClient
 
 from cardinal import briefing, main
 from cardinal.agents import load_agents
+from cardinal.calendar import Calendar
 from cardinal.config import Settings
 from cardinal.db import GoogleAccount
 from cardinal.sources.blackboard import Blackboard, parse_due
-from cardinal.sources.google import SCOPE_CALENDAR, SCOPE_GMAIL, Google, parse_event
+from cardinal.sources.google import SCOPE_APP_CALENDAR, SCOPE_CALENDAR, SCOPE_GMAIL, Google, parse_event
 from cardinal.today import ACCESS, Today, context_text
 from cardinal.vault import Vault
 
@@ -100,8 +101,10 @@ def calls():
 def today(gsettings, tmp_path, calls):
     client = httpx.AsyncClient(transport=httpx.MockTransport(google_handler(calls)))
     bb_client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=ICS)))
-    google = Google(gsettings, Vault(tmp_path / "secret.key"), client=client)
-    return Today(gsettings, google, Blackboard(gsettings.blackboard_ics_url, client=bb_client))
+    vault = Vault(tmp_path / "secret.key")
+    google = Google(gsettings, vault, client=client)
+    bb = Blackboard(gsettings.blackboard_ics_url, client=bb_client)
+    return Today(gsettings, google, bb, Calendar(gsettings, google, bb, vault, feed_client=bb_client))
 
 
 async def connect(today, session, slot="personal"):
@@ -110,11 +113,11 @@ async def connect(today, session, slot="personal"):
     return await today.google.finish(session, "the-code", state)
 
 
-def test_auth_url_asks_for_read_only_scopes_and_offline_access(today):
+def test_auth_url_asks_for_read_scopes_plus_own_calendar_only(today):
     q = parse_qs(urlparse(today.google.auth_url("personal")).query)
     assert q["redirect_uri"] == ["https://cardinal.example.ts.net/api/google/callback"]
     assert q["access_type"] == ["offline"] and q["prompt"] == ["consent"]
-    assert set(q["scope"][0].split()) == {"openid", "email", SCOPE_CALENDAR, SCOPE_GMAIL}
+    assert set(q["scope"][0].split()) == {"openid", "email", SCOPE_CALENDAR, SCOPE_GMAIL, SCOPE_APP_CALENDAR}
 
 
 async def test_connect_stores_tokens_encrypted_and_state_is_single_use(today, session):

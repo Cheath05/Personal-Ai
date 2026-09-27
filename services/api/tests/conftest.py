@@ -36,8 +36,9 @@ class FakeLocal:
     async def available(self):
         return self.online
 
-    async def chat(self, system, messages, *, max_tokens, effort=None):
+    async def chat(self, system, messages, *, max_tokens, effort=None, json_schema=None):
         self.calls += 1
+        self.last_schema = json_schema
         item = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         if isinstance(item, Exception):
             raise item
@@ -63,7 +64,7 @@ class FakeClaude:
     async def available(self):
         return self._client is not None
 
-    async def chat(self, system, messages, *, max_tokens, effort=None):
+    async def chat(self, system, messages, *, max_tokens, effort=None, json_schema=None):
         if self._client is None:
             raise BrainError("No Anthropic API key is set.")
         self.calls.append(self.model)

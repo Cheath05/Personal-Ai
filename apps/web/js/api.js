@@ -38,4 +38,13 @@ export const api = {
   today: (refresh = false) => request(`/api/today${refresh ? "?refresh=true" : ""}`),
   writeBriefing: () => request("/api/briefing", { method: "POST" }),
   disconnectGoogle: (slot) => request("/api/google/disconnect", { method: "POST", body: { slot } }),
+  calendarDay: (date, refresh = false) => request(`/api/calendar/day?date=${date}${refresh ? "&refresh=true" : ""}`),
+  addItem: (item) => request("/api/calendar/items", { method: "POST", body: item }),
+  deleteItem: (id) => request(`/api/calendar/items/${id}`, { method: "DELETE" }),
+  feeds: () => request("/api/calendar/feeds"),
+  addFeed: (name, url) => request("/api/calendar/feeds", { method: "POST", body: { name, url } }),
+  deleteFeed: (id) => request(`/api/calendar/feeds/${id}`, { method: "DELETE" }),
+  startSyllabus: (body) => request("/api/syllabus", { method: "POST", body }),
+  syllabus: (id) => request(`/api/syllabus/${id}`),
+  addSyllabusItems: (id, items) => request(`/api/syllabus/${id}/add`, { method: "POST", body: { items } }),
 };

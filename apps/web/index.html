@@ -94,9 +94,21 @@
             <span class="note small" id="brief-note"></span>
           </div>
         </section>
-        <section class="panel">
-          <div class="ph"><span class="t">Schedule</span><span class="m">TODAY · TOMORROW</span></div>
-          <ul class="list agenda" id="sched-list"></ul>
+        <section class="panel span-all cal-panel">
+          <div class="ph"><span class="t">Calendar</span><span class="m" id="cal-meta">–</span></div>
+          <div class="cal-bar">
+            <button type="button" class="icon-btn" id="cal-prev" aria-label="Previous day">‹</button>
+            <h2 class="cal-title" id="cal-title">–</h2>
+            <button type="button" class="icon-btn" id="cal-next" aria-label="Next day">›</button>
+            <button type="button" class="btn" id="cal-today">Today</button>
+            <span class="cal-spacer"></span>
+            <button type="button" class="btn" id="cal-import">Import syllabus</button>
+            <button type="button" class="btn primary" id="cal-add">+ Add</button>
+          </div>
+          <div class="cal-strip" id="cal-strip" role="tablist" aria-label="Days"></div>
+          <div class="cal-allday" id="cal-allday"></div>
+          <div class="cal-scroll" id="cal-scroll"><div class="cal-grid" id="cal-grid"></div></div>
+          <p class="note small" id="cal-note"></p>
         </section>
         <section class="panel">
           <div class="ph"><span class="t">Due soon</span><span class="m">BLACKBOARD · 7 DAYS</span></div>
@@ -107,9 +119,18 @@
           <ul class="list agenda" id="inbox-list"></ul>
         </section>
         <section class="panel">
-          <div class="ph"><span class="t">Connections</span><span class="m">READ-ONLY</span></div>
+          <div class="ph"><span class="t">Connections</span><span class="m">WHAT CARDINAL READS</span></div>
           <ul class="list" id="conn-list"></ul>
-          <p class="note small">Cardinal can read these but can't change anything. Changes arrive with approvals in Phase 2b.</p>
+          <p class="note small">Cardinal reads your calendars and inboxes. The only thing it writes is its own "Cardinal" calendar, and only with items you add or confirm.</p>
+          <details class="feeds">
+            <summary>Add an Apple (iCloud) or other calendar</summary>
+            <p class="note small">On iPhone: <b>Calendar</b> → <b>Calendars</b> → ⓘ next to the calendar → turn on <b>Public Calendar</b> → <b>Share Link</b>, and paste it here. Anyone with the link can see that calendar, so only share one you're fine with that for.</p>
+            <form id="feed-form" class="feed-form">
+              <input name="name" maxlength="40" placeholder="Name, e.g. iCloud" required>
+              <input name="url" placeholder="webcal://…" required>
+              <button type="submit" class="btn">Add</button>
+            </form>
+          </details>
         </section>
       </div>
     </main>
@@ -188,6 +209,67 @@
       </div>
     </main>
   </div>
+
+  <!-- Calendar: event details -->
+  <dialog class="sheet" id="ev-dialog" aria-labelledby="ev-title">
+    <div class="sheet-head"><span class="swatch" id="ev-swatch"></span><h3 id="ev-title">–</h3>
+      <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <dl class="kv" id="ev-info"></dl>
+    <div class="row-actions" id="ev-actions"></div>
+  </dialog>
+
+  <!-- Calendar: add an item -->
+  <dialog class="sheet" id="add-dialog" aria-labelledby="add-h">
+    <form id="add-form" class="sheet-form">
+      <div class="sheet-head"><h3 id="add-h">Add to calendar</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+      <label>Title<input name="title" required maxlength="200" placeholder="Study for CMSC 341 midterm"></label>
+      <div class="form-row">
+        <label>Date<input name="date" type="date" required></label>
+        <label>Start<input name="start" type="time"></label>
+        <label>End<input name="end" type="time"></label>
+      </div>
+      <p class="note small">Leave Start empty for an all-day item.</p>
+      <div class="form-row">
+        <label>Type<select name="kind">
+          <option value="event">Event</option><option value="class">Class</option><option value="due">Due</option>
+          <option value="exam">Exam</option><option value="quiz">Quiz</option><option value="reading">Reading / study</option>
+          <option value="no_class">No class</option></select></label>
+        <label>Course<input name="course" maxlength="40" placeholder="Optional"></label>
+      </div>
+      <label>Notes<textarea name="notes" rows="2" maxlength="2000" placeholder="Optional"></textarea></label>
+      <div class="row-actions"><button type="submit" class="btn primary">Save</button>
+        <span class="note small" id="add-note"></span></div>
+    </form>
+  </dialog>
+
+  <!-- Syllabus import -->
+  <dialog class="sheet wide" id="syl-dialog" aria-labelledby="syl-h">
+    <div class="sheet-head"><h3 id="syl-h">Import a syllabus</h3>
+      <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <form id="syl-form" class="sheet-form">
+      <p class="note">Give Cardinal the syllabus. Axiom reads it and proposes every dated item. Nothing is added until you tick it.</p>
+      <label>Course<input name="course" maxlength="40" placeholder="e.g. CMSC 341"></label>
+      <div class="seg" role="tablist" id="syl-tabs">
+        <button type="button" role="tab" data-tab="url" aria-selected="true">Link</button>
+        <button type="button" role="tab" data-tab="file" aria-selected="false">Photo or PDF</button>
+        <button type="button" role="tab" data-tab="text" aria-selected="false">Paste text</button>
+      </div>
+      <label data-pane="url">Web page or Google Doc link<input name="url" type="url" placeholder="https://…"></label>
+      <label data-pane="file" hidden>Photo, screenshot or PDF<input name="file" type="file" accept="image/*,application/pdf,.pdf"></label>
+      <label data-pane="text" hidden>Syllabus text<textarea name="text" rows="6" placeholder="Paste the schedule part of the syllabus"></textarea></label>
+      <div class="row-actions"><button type="submit" class="btn primary" id="syl-go">Read it</button>
+        <span class="note small" id="syl-status"></span></div>
+    </form>
+    <div id="syl-review" hidden>
+      <div class="syl-head"><b id="syl-count">–</b>
+        <span><button type="button" class="linkish" id="syl-all">Select all</button> · <button type="button" class="linkish" id="syl-none">None</button></span></div>
+      <div class="syl-list" id="syl-list"></div>
+      <div class="row-actions"><button type="button" class="btn primary" id="syl-add">Add to calendar</button>
+        <button type="button" class="btn" id="syl-again">Start over</button>
+        <span class="note small" id="syl-add-note"></span></div>
+    </div>
+  </dialog>
 
   <!-- Usage popover -->
   <div class="usage-pop" id="usage-pop" role="dialog" aria-label="Token usage" hidden>

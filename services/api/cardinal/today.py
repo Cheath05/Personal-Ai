@@ -21,10 +21,11 @@ ACCESS = ("calendar", "email", "blackboard")
 
 
 class Today:
-    def __init__(self, settings: Settings, google: Google, blackboard: Blackboard):
+    def __init__(self, settings: Settings, google: Google, blackboard: Blackboard, calendar=None):
         self.settings = settings
         self.google = google
         self.blackboard = blackboard
+        self.calendar = calendar  # adds your own Cardinal items and calendar links (iCloud etc.)
         self._cache: tuple[float, dict] | None = None
 
     @property
@@ -51,6 +52,17 @@ class Today:
                 except GoogleError as e:
                     src.update(status="error", detail=str(e))
             sources.append(src)
+
+        if self.calendar:
+            window = (day_start, day_start + timedelta(days=2))
+            events += self.calendar.items_between(session, *window)
+            extra, _errors = await self.calendar.feeds_between(session, *window)
+            events += extra
+            if self.calendar.feeds(session):
+                sources.append({"id": "feeds", "label": "Calendar links", "kind": "feeds",
+                                "status": "error" if _errors else "ok",
+                                "detail": "; ".join(e["detail"] for e in _errors) or None})
+        events.sort(key=lambda e: e["start"])
 
         bb = {"id": "blackboard", "label": "Blackboard", "kind": "blackboard", "status": "not_connected", "detail": None}
         if self.blackboard.configured:
@@ -112,7 +124,7 @@ def context_text(snap: dict | None, access: set[str]) -> str:
     lines = [f"Now: {_day(now)}, {_clock(now)}."]
 
     if "calendar" in access:
-        if not google_ok:
+        if not google_ok and not snap["events"]:
             lines.append("Calendar: not connected.")
         else:
             for label, d in (("Today", today), ("Tomorrow", tomorrow)):
@@ -149,7 +161,8 @@ def context_text(snap: dict | None, access: set[str]) -> str:
             lines.append(f"{name} inbox: {box['unread']} unread. Recent unread (last 2 days): {subjects or 'none'}.")
 
     for s in snap["sources"]:
-        relevant = "blackboard" in access if s["kind"] == "blackboard" else bool(access & {"calendar", "email"})
+        relevant = ("blackboard" in access if s["kind"] == "blackboard"
+                    else "calendar" in access if s["kind"] == "feeds" else bool(access & {"calendar", "email"}))
         if s["status"] == "error" and relevant:
             lines.append(f"{s['label']} couldn't be read: {s['detail']}")
     return "\n".join(lines)

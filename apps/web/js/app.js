@@ -1,4 +1,5 @@
 import { api, DEVICE } from "./api.js";
+import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +21,7 @@ const pad = (n) => String(n).padStart(2, "0");
 
 const state = { agents: [], sel: 0, view: "nexus", busy: false, brains: null, usage: null };
 let nexus = null;
+let calendar = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -60,7 +62,7 @@ function go(view) {
   nexus?.setView(view);
   history.replaceState(null, "", `#${view}`);
   if (view === "access") refreshAccess();
-  if (view === "today") refreshToday();
+  if (view === "today") { refreshToday(); calendar?.load(); }
 }
 
 /* ---------- Agent selection ---------- */
@@ -368,21 +370,6 @@ function renderToday(t) {
     : `DAILY AT ${t.briefing_time}`;
   $("brief-note").textContent = b?.sources ? `From ${b.sources}` : "";
 
-  // Schedule: today and tomorrow
-  const sched = $("sched-list");
-  if (!googleOk) sched.replaceChildren(emptyRow("Connect Google to see your calendar."));
-  else {
-    const rows = [];
-    let lastDay = "";
-    t.events.forEach((e) => {
-      const s = new Date(e.start), d = dayName.format(s);
-      if (d !== lastDay) { rows.push(el("li", "day", dayKey.format(s) === today ? `Today · ${d}` : d)); lastDay = d; }
-      const when = e.all_day ? "all day" : `${hm.format(s)}–${hm.format(new Date(e.end))}`;
-      rows.push(agendaRow(when, e.title, [e.location, e.calendar].filter(Boolean).join(" · ")));
-    });
-    sched.replaceChildren(...(rows.length ? rows : [emptyRow("Nothing on your calendar today or tomorrow.")]));
-  }
-
   // Due soon
   const due = $("due-list");
   const bb = src.blackboard;
@@ -422,6 +409,12 @@ function renderToday(t) {
         : g.connected ? `${g.email || "Connected"}${g.gmail === false ? " · Gmail not granted" : ""}${g.calendar === false ? " · Calendar not granted" : ""}`
         : g.slot === "school" ? "Your UMBC account (may be blocked by UMBC)" : "Calendar and Gmail, read-only"));
     li.append(info);
+    if (g.slot === "personal" && g.connected && g.can_write === false && s?.status !== "error") {
+      info.lastChild.textContent = "Reconnect once so Cardinal can keep its own calendar (shows in Apple Calendar)";
+      const again = el("a", "btn", "Reconnect");
+      again.href = `/api/google/connect?slot=${g.slot}`;
+      li.append(again);
+    }
     if (g.connected && s?.status === "error") {
       // Usually an expired sign-in (Google "Testing" apps expire weekly). One tap fixes it.
       info.lastChild.textContent = s.detail || "Sign-in needs renewing";
@@ -450,12 +443,42 @@ function renderToday(t) {
     bb?.status === "ok" ? "Calendar feed" : bb?.status === "error" ? bb.detail : "Add the calendar feed link on the hub"));
   bbLi.append(bbInfo, el("span", `tag ${bb?.status === "ok" ? "ok" : bb?.status === "error" ? "bad" : ""}`,
     bb?.status === "ok" ? "Connected" : bb?.status === "error" ? "Error" : "Not set"));
-  conn.replaceChildren(...items, bbLi);
+  const feedLis = (state.feeds || []).map((f) => {
+    const li = el("li");
+    const info = el("div");
+    const name = el("b", null, f.name);
+    name.prepend(Object.assign(el("i", "swatch"), { style: `background:${f.color}` }));
+    info.append(name, el("span", "sub", f.error || "Calendar link"));
+    const rm = el("button", "linkish", "Remove");
+    rm.type = "button";
+    rm.addEventListener("click", async () => {
+      if (!confirm(`Stop showing ${f.name}?`)) return;
+      try { state.feeds = await api.deleteFeed(f.id); renderToday(state.today); calendar?.refresh(); } catch (e) { toast(e.message); }
+    });
+    li.append(info, rm);
+    return li;
+  });
+  conn.replaceChildren(...items, bbLi, ...feedLis);
 }
+
+$("feed-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const btn = f.querySelector("button");
+  btn.disabled = true;
+  try {
+    state.feeds = await api.addFeed(f.name.value, f.url.value);
+    f.reset();
+    f.closest("details").open = false;
+    toast("Calendar added.");
+    renderToday(state.today);
+    calendar?.refresh();
+  } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+});
 
 async function refreshToday(force = false) {
   try {
-    state.today = await api.today(force);
+    [state.today, state.feeds] = await Promise.all([api.today(force), api.feeds()]);
     renderToday(state.today);
   } catch (e) {
     $("brief-text").textContent = `Couldn't load today: ${e.message}`;
@@ -529,6 +552,7 @@ async function boot() {
     return;
   }
   nexus = createNexus({ canvas: $("bg"), stage: $("stage"), agents: state.agents, onSelect: select, reduceMotion });
+  calendar = createCalendar({ toast, onChange: () => refreshToday(true) });
   buildCommands();
   await select(0);
   const hash = location.hash.replace("#", "");

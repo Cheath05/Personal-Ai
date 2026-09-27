@@ -61,7 +61,7 @@ class OllamaBrain:
         self._checked_at = time.monotonic()
 
     async def chat(self, system: str, messages: list[dict], *, max_tokens: int,
-                   effort: str | None = None) -> BrainReply:
+                   effort: str | None = None, json_schema: dict | None = None) -> BrainReply:
         body = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, *messages],
@@ -69,6 +69,8 @@ class OllamaBrain:
             "think": False,  # Qwen3 thinking mode is slow on small GPUs; answers directly instead
             "options": {"num_predict": max_tokens},
         }
+        if json_schema:
+            body["format"] = json_schema  # Ollama constrains the output to this JSON schema
         start = time.monotonic()
         try:
             r = await self._client.post(f"{self.url}/api/chat", json=body)

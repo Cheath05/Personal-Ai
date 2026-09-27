@@ -3,8 +3,9 @@
 import asyncio
 import contextlib
 import html
+import json
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,11 +13,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import briefing, usage
+from . import briefing, syllabus, usage
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
 from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
-from .db import CreditTopUp, Message, get_engine, get_session
+from .calendar import Calendar, CalendarError
+from .db import CreditTopUp, Message, SyllabusImport, get_engine, get_session
 from .router import BrainRouter, NoBrainAvailable
 from .sources.blackboard import Blackboard
 from .sources.google import SLOTS, Google, GoogleError
@@ -39,8 +41,10 @@ def build_router() -> BrainRouter:
 
 
 def build_today(settings) -> Today:
-    google = Google(settings, Vault(ROOT / "data" / "secret.key"))
-    return Today(settings, google, Blackboard(settings.blackboard_ics_url))
+    vault = Vault(ROOT / "data" / "secret.key")
+    google = Google(settings, vault)
+    blackboard = Blackboard(settings.blackboard_ics_url)
+    return Today(settings, google, blackboard, Calendar(settings, google, blackboard, vault))
 
 
 @asynccontextmanager
@@ -248,6 +252,8 @@ async def google_callback(code: str | None = None, state: str | None = None, err
     except GoogleError as e:
         return message_page("Google wasn't connected", str(e))
     app.state.today.invalidate()
+    if acct.slot == "personal":
+        await app.state.today.calendar.sync_unsynced(session)  # items saved before calendar access was granted
     return RedirectResponse(f"/?connected={acct.slot}#today", status_code=302)
 
 
@@ -262,6 +268,169 @@ async def google_disconnect(body: SlotIn, session: Session = Depends(get_session
     await app.state.today.google.disconnect(session, body.slot)
     app.state.today.invalidate()
     return {"google": app.state.today.google.status(session)}
+
+
+# ---------- Calendar: day view, your own items, calendar links ----------
+
+def calendar_svc() -> Calendar:
+    return app.state.today.calendar
+
+
+def parse_day(value: str | None) -> date:
+    if not value:
+        return calendar_svc().today()
+    try:
+        return date.fromisoformat(value)
+    except ValueError as e:
+        raise HTTPException(400, "Dates look like 2026-09-28.") from e
+
+
+@app.get("/api/calendar/day")
+async def calendar_day(date: str | None = None, refresh: bool = False, session: Session = Depends(get_session)):
+    try:
+        return await calendar_svc().day(session, parse_day(date), force=refresh)
+    except CalendarError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+class ItemIn(BaseModel):
+    title: str = Field(max_length=200)
+    date: str
+    start: str | None = None  # HH:MM; empty means all day
+    end: str | None = None
+    kind: str = "event"
+    course: str | None = Field(default=None, max_length=40)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+@app.post("/api/calendar/items")
+async def add_item(body: ItemIn, session: Session = Depends(get_session)):
+    try:
+        item, warning = await calendar_svc().add(session, title=body.title, day=parse_day(body.date), start=body.start,
+                                                 end=body.end, kind=body.kind, course=body.course, notes=body.notes)
+    except CalendarError as e:
+        raise HTTPException(400, str(e)) from e
+    app.state.today.invalidate()
+    return {"item": item.model_dump(), "warning": warning}
+
+
+@app.delete("/api/calendar/items/{item_id}")
+async def delete_item(item_id: int, session: Session = Depends(get_session)):
+    try:
+        await calendar_svc().delete(session, item_id)
+    except CalendarError as e:
+        raise HTTPException(404, str(e)) from e
+    app.state.today.invalidate()
+    return {"ok": True}
+
+
+@app.get("/api/calendar/feeds")
+def list_feeds(session: Session = Depends(get_session)):
+    return calendar_svc().feeds(session)
+
+
+class FeedIn(BaseModel):
+    name: str = Field(max_length=40)
+    url: str = Field(max_length=2000)
+
+
+@app.post("/api/calendar/feeds")
+async def add_feed(body: FeedIn, session: Session = Depends(get_session)):
+    try:
+        await calendar_svc().add_feed(session, body.name, body.url)
+    except CalendarError as e:
+        raise HTTPException(400, str(e)) from e
+    app.state.today.invalidate()
+    return calendar_svc().feeds(session)
+
+
+@app.delete("/api/calendar/feeds/{feed_id}")
+def delete_feed(feed_id: int, session: Session = Depends(get_session)):
+    calendar_svc().delete_feed(session, feed_id)
+    app.state.today.invalidate()
+    return calendar_svc().feeds(session)
+
+
+# ---------- Syllabus import: the AI proposes dates, you confirm ----------
+
+class SyllabusIn(BaseModel):
+    course: str | None = Field(default=None, max_length=40)
+    url: str | None = Field(default=None, max_length=2000)
+    text: str | None = Field(default=None, max_length=syllabus.MAX_CHARS)
+    file_name: str | None = Field(default=None, max_length=200)
+    file_b64: str | None = Field(default=None, max_length=17_000_000)
+
+
+def import_json(job: SyllabusImport) -> dict:
+    return {**job.model_dump(exclude={"proposals"}), "items": json.loads(job.proposals) if job.proposals else []}
+
+
+@app.post("/api/syllabus")
+async def start_syllabus(body: SyllabusIn, session: Session = Depends(get_session)):
+    if not (body.url or body.text or body.file_b64):
+        raise HTTPException(400, "Give a link, a file or some text.")
+    if body.url and not body.url.startswith(("https://", "http://")):
+        raise HTTPException(400, "Links start with https://.")
+    job = SyllabusImport(course=(body.course or "").strip() or None,
+                         source=body.url or body.file_name or "Pasted text", detail="Starting…")
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    task = asyncio.create_task(syllabus.run_import(job.id, app.state.router, calendar_svc().tz, url=body.url,
+                                                   text=body.text, file_name=body.file_name, file_b64=body.file_b64))
+    app.state.jobs = getattr(app.state, "jobs", set())
+    app.state.jobs.add(task)
+    task.add_done_callback(app.state.jobs.discard)
+    return import_json(job)
+
+
+@app.get("/api/syllabus")
+def list_syllabus(session: Session = Depends(get_session)):
+    rows = session.exec(select(SyllabusImport).order_by(col(SyllabusImport.id).desc()).limit(10)).all()
+    return [import_json(r) for r in rows]
+
+
+@app.get("/api/syllabus/{import_id}")
+def get_syllabus(import_id: int, session: Session = Depends(get_session)):
+    job = session.get(SyllabusImport, import_id)
+    if not job:
+        raise HTTPException(404, "No such import.")
+    return import_json(job)
+
+
+class ProposalIn(BaseModel):
+    date: str
+    time: str | None = None
+    end: str | None = None
+    title: str = Field(max_length=200)
+    kind: str = "event"
+
+
+class AddProposalsIn(BaseModel):
+    items: list[ProposalIn] = Field(max_length=300)
+
+
+@app.post("/api/syllabus/{import_id}/add")
+async def add_syllabus_items(import_id: int, body: AddProposalsIn, session: Session = Depends(get_session)):
+    job = session.get(SyllabusImport, import_id)
+    if not job or job.status not in ("ready", "added"):
+        raise HTTPException(404, "That import isn't ready.")
+    cal, added, warning = calendar_svc(), 0, None
+    for p in body.items:
+        try:
+            _, w = await cal.add(session, title=p.title, day=parse_day(p.date), start=p.time or None,
+                                 end=(p.end or None) if p.time else None, kind=p.kind,
+                                 course=job.course, source=f"syllabus:{job.id}")
+        except CalendarError:
+            continue
+        added += 1
+        warning = warning or w
+    job.status = "added"
+    job.detail = f"Added {added} items to your calendar."
+    session.add(job)
+    session.commit()
+    app.state.today.invalidate()
+    return {"added": added, "warning": warning}
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

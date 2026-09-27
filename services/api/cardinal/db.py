@@ -66,6 +66,49 @@ class GoogleAccount(SQLModel, table=True):
     scopes: str = ""
     connected_at: datetime = Field(default_factory=utcnow)
     last_error: str | None = None
+    cardinal_calendar_id: str | None = None  # the "Cardinal" calendar Cardinal created (and may edit)
+
+
+class CalendarItem(SQLModel, table=True):
+    """Something you added in Cardinal, typed in or confirmed from a syllabus.
+
+    Mirrored to the "Cardinal" Google calendar when that's allowed, so it shows in Apple Calendar too."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    start: datetime = Field(index=True)
+    end: datetime
+    all_day: bool = False
+    kind: str = "event"  # event | class | due | exam | quiz | reading | no_class
+    course: str | None = None
+    notes: str | None = None
+    source: str = "manual"  # "manual" | "syllabus:<import id>"
+    google_event_id: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class CalendarFeed(SQLModel, table=True):
+    """Another calendar by link (e.g. an iCloud calendar's public link). The link is encrypted."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    url_enc: str
+    color: str = "#a47bff"
+    created_at: datetime = Field(default_factory=utcnow)
+    last_error: str | None = None
+
+
+class SyllabusImport(SQLModel, table=True):
+    """A syllabus you gave Cardinal. Proposed dates wait here until you confirm them."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=utcnow)
+    course: str | None = None
+    source: str  # the link, or the file name
+    status: str = "reading"  # reading | ready | failed | added
+    detail: str | None = None  # progress or the error
+    proposals: str | None = None  # JSON list of proposed items
+    brain: str | None = None
 
 
 class Briefing(SQLModel, table=True):

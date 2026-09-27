@@ -52,14 +52,29 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - **Tested:** 40 tests with mocked Google and Blackboard. A demo run on the Mac's `qwen3:4b-instruct` wrote an accurate briefing in 13 s.
 - **Not yet tested against real Google.** The first real sign-in is the test. The UMBC account may be blocked by its admins.
 
+## Calendar and syllabus import (built 27 Sep 2026)
+
+- **Today → Calendar:** a day time-grid.
+  - A strip of days from 7 back to 14 ahead; the API allows 7 back to 120 ahead.
+  - Morning, afternoon, evening and night tints, colored blocks, a now-line, and all-day and due chips.
+  - Code: `cardinal/calendar.py`, `apps/web/js/calendar.js`.
+- **Your own items** (`CalendarItem`): add and remove in the app.
+  - Mirrored to a **"Cardinal" Google calendar** created with the `calendar.app.created` scope, so Cardinal can't touch any other calendar. It shows in Apple Calendar wherever the Google account is added.
+  - Items saved before that permission is granted sync on reconnect (`sync_unsynced`).
+- **Calendar links** (`CalendarFeed`, URL encrypted): e.g. an iCloud public calendar. Repeats are expanded with `recurring-ical-events`.
+- **Syllabus import** (`cardinal/syllabus.py`): a link (web page, public Google Doc export, PDF), a photo or PDF upload, or pasted text.
+  - OCR runs on the hub with RapidOCR. `opencv-python` is overridden to the headless build, because the VM has no libGL.
+  - The text is split into ~5k-character chunks, then the `syllabus` job (local, JSON schema) extracts the dates.
+  - The code parses human dates and times itself ("Sep 12", "11:59pm"), because small models ignore the requested format. It also fills in a missing time from the item's own spot on the line.
+  - The user reviews and ticks the proposals; nothing is added without that.
+  - Measured on the Mac's 4B model: 16/16 dates from a pasted schedule in 27 s, and 5/5 from a photo in 13 s. Plain topic rows are sometimes skipped.
+- **Needs the user once:** Today → Personal Google → **Reconnect**, to grant the Cardinal-calendar permission.
+
 ## Next: Phase 2b (acting, with approval)
 
 1. Action Preview queue: proposed change, before/after, why, undoable. Authorize once, Always allow, or Deny.
 2. Trust rules, narrowly matched, plus a hard-coded always-ask list (PLAN §6). Activity Log with Undo.
-3. First actions:
-   - Add the `calendar.app.created` scope, so Cardinal can only edit calendars it creates. Asked for with incremental auth.
-   - Create a "Cardinal" calendar.
-   - Study blocks proposed from Blackboard due dates.
+3. First AI-proposed actions: study blocks before Blackboard and syllabus due dates, written to the Cardinal calendar.
 
 ## Things to keep in mind
 

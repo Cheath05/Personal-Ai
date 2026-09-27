@@ -4,14 +4,13 @@ The feed URL works without a login, so it's kept in the hub's .env and never sho
 """
 
 import re
-import time
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
-from icalendar import Calendar
 
-CACHE_SECONDS = 1800
+from .ics import Feed, FeedError, events_between
+
 COURSE = re.compile(r"\b([A-Z]{2,5}\s?\d{3}[A-Z]?)\b")
 
 
@@ -19,53 +18,53 @@ class BlackboardError(Exception):
     pass
 
 
+def to_due(ev: dict) -> dict:
+    found = COURSE.search(ev["title"]) or COURSE.search(ev.get("description") or "")
+    due = datetime.fromisoformat(ev["start"])
+    if ev["all_day"]:
+        due = due.replace(hour=23, minute=59, second=59)
+    return {"due": due.isoformat(), "all_day": ev["all_day"], "title": ev["title"],
+            "course": found.group(1) if found else None}
+
+
 def parse_due(ics: str | bytes, now: datetime, days: int, tz: ZoneInfo) -> list[dict]:
     try:
-        cal = Calendar.from_ical(ics)
-    except ValueError as e:
+        evs = events_between(ics, now.replace(hour=0, minute=0, second=0, microsecond=0), now + timedelta(days=days), tz)
+    except FeedError as e:
         raise BlackboardError("The Blackboard link didn't return a calendar.") from e
-    end = now + timedelta(days=days)
-    out = []
-    for ev in cal.walk("VEVENT"):
-        start = ev.decoded("DTSTART", None)
-        if start is None:
-            continue
-        if isinstance(start, datetime):
-            due = start.astimezone(tz) if start.tzinfo else start.replace(tzinfo=tz)
-            all_day = False
-        elif isinstance(start, date):
-            due = datetime.combine(start, datetime.max.time().replace(microsecond=0), tz)
-            all_day = True
-        else:
-            continue
-        if not (now <= due <= end):
-            continue
-        title = str(ev.get("SUMMARY", "")).strip() or "(untitled)"
-        found = COURSE.search(title) or COURSE.search(str(ev.get("DESCRIPTION", "")))
-        out.append({"due": due.isoformat(), "all_day": all_day, "title": title,
-                    "course": found.group(1) if found else None})
-    return sorted(out, key=lambda d: d["due"])
+    items = [to_due(e) for e in evs]
+    return [d for d in items if now <= datetime.fromisoformat(d["due"]) <= now + timedelta(days=days)]
 
 
 class Blackboard:
     def __init__(self, url: str | None, client: httpx.AsyncClient | None = None):
-        self.url = url.replace("webcal://", "https://", 1) if url else None
-        self.client = client or httpx.AsyncClient(timeout=15.0, follow_redirects=True)
-        self._cache: tuple[float, bytes] | None = None
+        self.feed = Feed(url, client)
+
+    @property
+    def url(self) -> str | None:
+        return self.feed.url
 
     @property
     def configured(self) -> bool:
-        return bool(self.url)
+        return self.feed.configured
+
+    async def _ics(self) -> bytes:
+        try:
+            return await self.feed.fetch()
+        except FeedError as e:
+            raise BlackboardError(str(e).replace("calendar link", "Blackboard feed")) from e
 
     async def due(self, now: datetime, tz: ZoneInfo, days: int = 7) -> list[dict]:
-        if not self.url:
+        if not self.configured:
             return []
-        if not self._cache or time.time() - self._cache[0] > CACHE_SECONDS:
-            try:
-                r = await self.client.get(self.url)
-            except httpx.HTTPError as e:
-                raise BlackboardError(f"Couldn't reach Blackboard: {e}") from e
-            if r.status_code != 200:
-                raise BlackboardError(f"Blackboard feed returned {r.status_code}. The link may have been reset.")
-            self._cache = (time.time(), r.content)
-        return parse_due(self._cache[1], now, days, tz)
+        return parse_due(await self._ics(), now, days, tz)
+
+    async def between(self, start: datetime, end: datetime, tz: ZoneInfo) -> list[dict]:
+        """Due items in [start, end), e.g. one day of the calendar view."""
+        if not self.configured:
+            return []
+        try:
+            evs = events_between(await self._ics(), start, end, tz)
+        except FeedError as e:
+            raise BlackboardError(str(e)) from e
+        return [to_due(e) for e in evs]
