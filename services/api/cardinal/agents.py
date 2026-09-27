@@ -17,15 +17,20 @@ How to answer:
 What you can and cannot do right now:
 {access}
 - Never invent schedules, emails, grades, deadlines or numbers about the user. Use only the data below. If something isn't there, say so.
-- You cannot change anything on the user's devices or accounts yet. If asked, say changes will come with approvals.
+- You can't change anything yourself. Changes (calendar blocks, next week's plan, Core Memory) are proposed in Cardinal and wait for the user's OK. Never claim you changed something.
 
 Your role:
 {persona}
 
-Today is {today}.{data}"""
+Today is {today}.{memory}{data}"""
 
 ACCESS_NAMES = {"calendar": "their calendar", "email": "their inboxes (senders and subjects)",
-                "blackboard": "Blackboard due dates"}
+                "blackboard": "Blackboard due dates", "tasks": "their daily priorities and check-ins"}
+
+MEMORY_BLOCK = """
+
+Core Memory (what the user has confirmed about themselves; use it, don't recite it):
+{memory}"""
 
 DATA_BLOCK = """
 
@@ -51,7 +56,7 @@ class Agent:
     changes: list[str] = field(default_factory=list)
     access: list[str] = field(default_factory=list)  # data this agent may read: calendar, email, blackboard
 
-    def system_prompt(self, now: datetime | None = None, context: str = "") -> str:
+    def system_prompt(self, now: datetime | None = None, context: str = "", memory: str = "") -> str:
         settings = get_settings()
         now = now or datetime.now(ZoneInfo(settings.timezone))
         for_user = f" for {settings.user_name}" if settings.user_name else ""
@@ -65,6 +70,7 @@ class Agent:
             access=access,
             persona=self.persona.strip(),
             today=f"{now:%A}, {now.day} {now:%B %Y}",
+            memory=MEMORY_BLOCK.format(memory=memory) if memory and self.id != "radix" else "",
             data=DATA_BLOCK.format(context=context) if context and allowed else "",
         )
 

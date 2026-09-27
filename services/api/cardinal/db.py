@@ -161,6 +161,72 @@ class TrustRule(SQLModel, table=True):
     source_action_id: int | None = None
 
 
+class Task(SQLModel, table=True):
+    """A priority for a day: from your morning top 3, last night's "first task", or carried over."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    day: str = Field(index=True)  # local date, YYYY-MM-DD
+    title: str
+    status: str = "open"  # open | done | dropped
+    source: str = "morning"  # morning | first_task | carried
+    position: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
+    done_at: datetime | None = None
+
+
+class CheckIn(SQLModel, table=True):
+    """A morning check-in or evening review with Delta."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    day: str = Field(index=True)
+    kind: str = Field(index=True)  # morning | evening
+    ts: datetime = Field(default_factory=utcnow)
+    energy: int | None = None  # 1-5, morning
+    answers: str = "{}"  # JSON: note, went_well, didnt, why, first_task, blocks_done, blocks_planned
+    reply: str | None = None  # Delta's answer
+    brain: str | None = None
+
+
+class Rollup(SQLModel, table=True):
+    """Delta's weekly rollup. `stats` are computed in code; the writing is Delta's."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    week_start: str = Field(index=True)  # Monday, YYYY-MM-DD
+    ts: datetime = Field(default_factory=utcnow)
+    stats: str  # JSON
+    summary: str
+    wins: str = "[]"
+    blockers: str = "[]"
+    experiments: str = "[]"  # proposed for next week
+    focus: str = "[]"  # proposed focus for next week
+    plan_action_id: int | None = None
+    brain: str | None = None
+
+
+class Experiment(SQLModel, table=True):
+    """A small change to try for a week. You mark how it went; the next rollup reads that."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    week_start: str = Field(index=True)
+    text: str
+    result: str | None = None  # kept | partly | skipped
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Memory(SQLModel, table=True):
+    """Core Memory: what Cardinal knows about you. Every agent reads the active ones; you can edit anything."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = "fact"  # fact | pattern | preference
+    text: str
+    evidence: str | None = None
+    confidence: float = 1.0
+    source: str = "you"  # you | sigma
+    active: bool = True
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 _engine = None
 
 

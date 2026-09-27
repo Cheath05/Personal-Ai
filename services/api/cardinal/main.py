@@ -13,13 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import briefing, planner, syllabus, usage
+from . import briefing, planner, review, syllabus, usage
 from .actions import ActionError, Actions
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
 from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
 from .calendar import Calendar, CalendarError
-from .db import CreditTopUp, Message, SyllabusImport, get_engine, get_session
+from .db import CreditTopUp, Experiment, Memory, Message, SyllabusImport, Task, get_engine, get_session, utcnow
 from .router import BrainRouter, NoBrainAvailable
 from .sources.blackboard import Blackboard
 from .sources.google import SLOTS, Google, GoogleError
@@ -146,9 +146,13 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
     context = ""
     if agent.access:
         context = context_text(await app.state.today.for_chat(session), set(agent.access))
+    if "tasks" in agent.access:
+        extra = review.context_text(session, datetime.now(app.state.today.tz))
+        context = f"{context}\n{extra}".strip()
     try:
         result = await router.run(
-            session, agent_id=agent.id, job=agent.job, system=agent.system_prompt(context=context),
+            session, agent_id=agent.id, job=agent.job,
+            system=agent.system_prompt(context=context, memory=review.memory_text(session)),
             messages=turns, force_claude=body.retry_with_claude,
         )
     except NoBrainAvailable as e:
@@ -523,6 +527,169 @@ async def run_planner(session: Session = Depends(get_session)):
     result = await planner.plan_study(session, calendar_svc(), actions_svc())
     app.state.today.invalidate()
     return result
+
+
+# ---------- Review: Delta's check-ins and rollup, Core Memory ----------
+
+def now_local() -> datetime:
+    return datetime.now(app.state.today.tz)
+
+
+def review_error(e: review.ReviewError) -> HTTPException:
+    return HTTPException(409, str(e))
+
+
+async def delta_context(session: Session, now: datetime) -> str:
+    snap = await app.state.today.for_chat(session)
+    base = context_text(snap, {"calendar"})
+    extra = review.context_text(session, now)
+    return f"{base}\n{extra}".strip()
+
+
+@app.get("/api/review")
+def review_status(session: Session = Depends(get_session)):
+    return review.status(session, now_local(), get_settings())
+
+
+class MorningIn(BaseModel):
+    top: list[str] = Field(max_length=3)
+    energy: int = Field(ge=1, le=5)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@app.post("/api/review/morning")
+async def morning_checkin(body: MorningIn, session: Session = Depends(get_session),
+                          x_cardinal_device: str | None = Header(default=None)):
+    now = now_local()
+    try:
+        c = await review.morning(session, app.state.router, app.state.agents["delta"], now=now, top=body.top,
+                                 energy=body.energy, note=body.note, context=await delta_context(session, now),
+                                 device=(x_cardinal_device or "")[:40] or None)
+    except review.ReviewError as e:
+        raise review_error(e) from e
+    return review.checkin_json(c)
+
+
+class EveningIn(BaseModel):
+    done_task_ids: list[int] = []
+    done_block_ids: list[int] = []
+    went_well: str = Field(default="", max_length=2000)
+    didnt: str = Field(default="", max_length=2000)
+    why: str = Field(default="", max_length=2000)
+    first_task: str | None = Field(default=None, max_length=200)
+    carry: bool = True
+
+
+@app.post("/api/review/evening")
+async def evening_review(body: EveningIn, session: Session = Depends(get_session),
+                         x_cardinal_device: str | None = Header(default=None)):
+    now = now_local()
+    c = await review.evening(session, app.state.router, app.state.agents["delta"], now=now,
+                             done_task_ids=body.done_task_ids, done_block_ids=body.done_block_ids,
+                             went_well=body.went_well.strip(), didnt=body.didnt.strip(), why=body.why.strip(),
+                             first_task=body.first_task, carry=body.carry, context=await delta_context(session, now),
+                             device=(x_cardinal_device or "")[:40] or None)
+    return review.checkin_json(c)
+
+
+class TaskIn(BaseModel):
+    title: str = Field(max_length=200)
+
+
+@app.post("/api/review/tasks")
+def add_task(body: TaskIn, session: Session = Depends(get_session)):
+    if not body.title.strip():
+        raise HTTPException(400, "Give it a title.")
+    day = now_local().date().isoformat()
+    t = Task(day=day, title=body.title.strip(), source="manual", position=len(review.tasks_for(session, day)))
+    session.add(t)
+    session.commit()
+    session.refresh(t)
+    return t.model_dump()
+
+
+class TaskStatusIn(BaseModel):
+    status: str
+
+
+@app.post("/api/review/tasks/{task_id}")
+def set_task(task_id: int, body: TaskStatusIn, session: Session = Depends(get_session)):
+    t = session.get(Task, task_id)
+    if not t or body.status not in ("open", "done", "dropped"):
+        raise HTTPException(404, "No such task.")
+    t.status, t.done_at = body.status, utcnow() if body.status == "done" else None
+    session.add(t)
+    session.commit()
+    session.refresh(t)
+    return t.model_dump()
+
+
+class ExperimentIn(BaseModel):
+    result: str | None
+
+
+@app.post("/api/review/experiments/{exp_id}")
+def mark_experiment(exp_id: int, body: ExperimentIn, session: Session = Depends(get_session)):
+    e = session.get(Experiment, exp_id)
+    if not e or body.result not in (None, "kept", "partly", "skipped"):
+        raise HTTPException(404, "No such experiment.")
+    e.result = body.result
+    session.add(e)
+    session.commit()
+    session.refresh(e)
+    return e.model_dump()
+
+
+@app.post("/api/review/rollup")
+async def rollup_now(session: Session = Depends(get_session)):
+    snap = await app.state.today.snapshot(session)
+    due = "; ".join(f"{d['title']} ({d['due'][:10]})" for d in snap["due"][:8])
+    try:
+        r = await review.write_rollup(session, app.state.router, app.state.agents["delta"], app.state.actions,
+                                      now=now_local(), due_text=due, trigger="manual")
+    except review.ReviewError as e:
+        raise review_error(e) from e
+    return review.rollup_json(r)
+
+
+@app.get("/api/memory")
+def list_memory(session: Session = Depends(get_session)):
+    return [m.model_dump() for m in review.memories(session)]
+
+
+class MemoryIn(BaseModel):
+    text: str = Field(max_length=300)
+    kind: str = "fact"
+
+
+@app.post("/api/memory")
+def add_memory(body: MemoryIn, session: Session = Depends(get_session)):
+    if not body.text.strip():
+        raise HTTPException(400, "Write something to remember.")
+    m = Memory(text=body.text.strip(), kind=body.kind if body.kind in ("fact", "pattern", "preference") else "fact")
+    session.add(m)
+    session.commit()
+    return list_memory(session)
+
+
+@app.patch("/api/memory/{memory_id}")
+def edit_memory(memory_id: int, body: MemoryIn, session: Session = Depends(get_session)):
+    m = session.get(Memory, memory_id)
+    if not m or not body.text.strip():
+        raise HTTPException(404, "No such memory.")
+    m.text, m.updated_at, m.source, m.confidence = body.text.strip(), utcnow(), "you", 1.0
+    session.add(m)
+    session.commit()
+    return list_memory(session)
+
+
+@app.delete("/api/memory/{memory_id}")
+def delete_memory(memory_id: int, session: Session = Depends(get_session)):
+    m = session.get(Memory, memory_id)
+    if m:
+        session.delete(m)
+        session.commit()
+    return list_memory(session)
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

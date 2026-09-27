@@ -33,6 +33,7 @@
           <button type="button" data-view="access">Access</button>
         </nav>
         <div class="top-r">
+          <button class="ok-chip checkin" type="button" id="ci-chip" hidden title="Check in with Delta"></button>
           <button class="ok-chip" type="button" id="ok-chip" hidden title="Changes waiting for your OK"></button>
           <button class="usage-chip" type="button" id="usage-chip" aria-haspopup="dialog" aria-expanded="false" title="Token usage this month">
             <span id="usage-chip-text">–</span>
@@ -182,11 +183,76 @@
 
     <!-- ================= REVIEW ================= -->
     <main class="view" id="v-review" hidden>
-      <div class="vhead"><div><h1>Review</h1><p>Morning and evening check-ins, and the Sunday rollup.</p></div><span class="who">DELTA [DLT5-0712]</span></div>
-      <section class="panel soon">
-        <div class="ph"><span class="t">Arrives in Phase 3</span><span class="m">EXECUTIVE ASSISTANT</span></div>
-        <p>Delta checks in at 7:00 AM and 9:30 PM and writes a weekly rollup with three experiments. You can already talk a day through with Delta in the Nexus.</p>
-      </section>
+      <div class="vhead"><div><h1>Review</h1><p id="rv-line">Morning and evening check-ins, the week, and what Cardinal knows about you.</p></div><span class="who">DELTA [DLT5-0712] · SIGMA [SGM6-1089]</span></div>
+      <div class="grid two review">
+        <section class="panel" id="rv-morning">
+          <div class="ph"><span class="t">Morning check-in</span><span class="m" id="rv-m-meta">–</span></div>
+          <form id="rv-m-form" class="rv-form">
+            <p class="note">Your top 3 for today, and how much energy you have.</p>
+            <ol class="top3">
+              <li><input name="t1" maxlength="200" placeholder="Most important thing today" list="rv-suggest"></li>
+              <li><input name="t2" maxlength="200" placeholder="Second" list="rv-suggest"></li>
+              <li><input name="t3" maxlength="200" placeholder="Third" list="rv-suggest"></li>
+            </ol>
+            <datalist id="rv-suggest"></datalist>
+            <div class="energy" role="radiogroup" aria-label="Energy, 1 to 5" id="rv-energy">
+              <span class="note small">Energy</span>
+              <button type="button" data-v="1" role="radio">1</button><button type="button" data-v="2" role="radio">2</button>
+              <button type="button" data-v="3" role="radio">3</button><button type="button" data-v="4" role="radio">4</button>
+              <button type="button" data-v="5" role="radio">5</button>
+              <span class="note small">drained → charged</span>
+            </div>
+            <textarea name="note" rows="2" maxlength="1000" placeholder="Anything else? (optional)"></textarea>
+            <div class="row-actions"><button type="submit" class="btn primary">Check in</button><span class="note small" id="rv-m-note"></span></div>
+          </form>
+          <div id="rv-m-done" hidden>
+            <ul class="checklist" id="rv-tasks"></ul>
+            <form id="rv-task-form" class="inline-add"><input name="title" maxlength="200" placeholder="Add a task for today"><button type="submit" class="btn">Add</button></form>
+            <blockquote class="delta-says" id="rv-m-reply" hidden></blockquote>
+          </div>
+        </section>
+
+        <section class="panel" id="rv-evening">
+          <div class="ph"><span class="t">Evening review</span><span class="m" id="rv-e-meta">–</span></div>
+          <div id="rv-e-wait"><p class="note" id="rv-e-wait-text"></p>
+            <button type="button" class="btn" id="rv-e-start">Start it now</button></div>
+          <form id="rv-e-form" class="rv-form" hidden>
+            <p class="note small">Planned vs done. Tick what you finished.</p>
+            <ul class="checklist" id="rv-e-list"></ul>
+            <label>What went well?<textarea name="went_well" rows="2" maxlength="2000"></textarea></label>
+            <label>What didn't?<textarea name="didnt" rows="2" maxlength="2000"></textarea></label>
+            <label>Why?<textarea name="why" rows="2" maxlength="2000"></textarea></label>
+            <label>Tomorrow's first task<input name="first_task" maxlength="200" placeholder="The first thing you'll do"></label>
+            <label class="check"><input type="checkbox" name="carry" checked> Move unfinished priorities to tomorrow</label>
+            <div class="row-actions"><button type="submit" class="btn primary">Finish the day</button><span class="note small" id="rv-e-note"></span></div>
+          </form>
+          <div id="rv-e-done" hidden><dl class="kv" id="rv-e-summary"></dl><blockquote class="delta-says" id="rv-e-reply" hidden></blockquote></div>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">This week</span><span class="m" id="rv-w-meta">–</span></div>
+          <div class="tiles" id="rv-tiles"></div>
+          <div class="energy-week" id="rv-energy-week" aria-label="Energy by day"></div>
+          <div id="rv-exps"></div>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">Weekly rollup</span><span class="m" id="rv-r-meta">–</span></div>
+          <div id="rv-rollup"></div>
+          <div class="row-actions"><button type="button" class="btn" id="rv-r-now">Write it now</button><span class="note small" id="rv-r-note"></span></div>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">Core Memory</span><span class="m">KEPT BY SIGMA · YOURS TO EDIT</span></div>
+          <p class="note small">Every agent (except Radix) reads these. Sigma proposes new patterns overnight, backed by your check-ins, and they wait in Needs your OK. Change or remove anything.</p>
+          <ul class="list" id="rv-memory"></ul>
+          <form id="rv-mem-form" class="inline-add">
+            <select name="kind" aria-label="Kind"><option value="fact">Fact</option><option value="preference">Preference</option><option value="pattern">Pattern</option></select>
+            <input name="text" maxlength="300" placeholder="Something Cardinal should know, e.g. I focus best in the library">
+            <button type="submit" class="btn">Remember</button>
+          </form>
+        </section>
+      </div>
     </main>
 
     <!-- ================= ACCESS ================= -->

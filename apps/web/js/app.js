@@ -2,6 +2,7 @@ import { api, DEVICE } from "./api.js";
 import { createActions } from "./actions.js";
 import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
+import { createReview } from "./review.js";
 
 const $ = (id) => document.getElementById(id);
 // Motion is a per-device choice. Full by default: Windows reports "reduce motion" whenever its
@@ -24,6 +25,7 @@ const state = { agents: [], sel: 0, view: "nexus", busy: false, brains: null, us
 let nexus = null;
 let calendar = null;
 let actions = null;
+let reviewUI = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -65,6 +67,7 @@ function go(view) {
   history.replaceState(null, "", `#${view}`);
   if (view === "access") refreshAccess();
   if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); }
+  if (view === "review") reviewUI?.refresh();
 }
 
 /* ---------- Agent selection ---------- */
@@ -512,6 +515,7 @@ function buildCommands() {
       .map(([v, label]) => ({ label, hint: "View", run: () => go(v) })),
     { label: "Show usage", hint: "Tokens and cost", run: () => toggleUsage(true) },
     { label: "Suggest study time", hint: "Axiom", run: () => { go("today"); $("plan-now").click(); } },
+    { label: "Check in with Delta", hint: "Review", run: () => go("review") },
     ...Object.entries(MOTION_LABELS).map(([pref, name]) => ({
       label: `Motion: ${name}`, hint: pref === motionPref ? "Current, this device" : "This device", run: () => setMotion(pref),
     })),
@@ -563,7 +567,15 @@ async function boot() {
     onChange: () => { calendar.refresh(); refreshToday(true); if (state.view === "access") actions.renderAccess(); },
   });
   actions.refresh();
-  setInterval(() => { if (!document.hidden) actions.refresh(); }, 60000);
+  reviewUI = createReview({
+    toast,
+    getDue: () => state.today?.due || [],
+    goToday: () => go("today"),
+    onChange: () => actions.refresh(),
+  });
+  reviewUI.refreshChip();
+  setInterval(() => { if (!document.hidden) { actions.refresh(); reviewUI.refreshChip(); } }, 60000);
+  $("ci-chip").addEventListener("click", () => go("review"));
   $("ok-chip").addEventListener("click", () => go("today"));
   buildCommands();
   await select(0);

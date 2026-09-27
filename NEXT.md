@@ -1,4 +1,4 @@
-# Next session: after Phase 2 (pick voice or Executive Assistant)
+# Next session: Phase 4 (Running) or voice
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -94,10 +94,36 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Top bar → "N to OK" chip.
 - **Tested:** 63 tests. A demo run covered proposals around events, the rule dialog, auto-add by a rule, and the log.
 
+## Phase 3 (built 27 Sep 2026): Executive Assistant and Core Memory
+
+- **`cardinal/review.py`**:
+  - **Delta's morning check-in:** top 3 plus energy 1–5. It creates `Task`s, and Delta replies using the calendar.
+  - **Evening review:**
+    - Planned vs done is pre-filled from today's tasks and study blocks.
+    - You answer went well / didn't / why, and set tomorrow's first task. Unfinished tasks carry over.
+  - Both check-ins are also posted to Delta's chat.
+  - **`week_stats`** are computed in code: check-ins, completion, study blocks, energy by day and vs last week, streak.
+  - **Weekly rollup** (Sun `CARDINAL_ROLLUP_TIME` 18:00):
+    - Delta writes JSON (summary, wins, blockers, 3 experiments, focus).
+    - Next week's plan becomes a `plan.set_week` Action for the user to authorize; that's when the `Experiment`s are created.
+    - The rollup uses the interactive lane (G14 first) for quality.
+  - **Sigma's nightly pass** (02:00) proposes `memory.add` Actions:
+    - Arithmetic patterns: weekday energy, check-in time, completion.
+    - Up to 2 model patterns from evening notes, which must cite at least 2 real dates.
+    - Deduplicated forever.
+  - **Core Memory** (`Memory`): the user can add, edit and delete entries. Active ones go into every agent's prompt except Radix (`MEMORY_BLOCK` in agents.py).
+- **Agents with the `tasks` access** (Cardinal, Ordinal, Delta, Sigma) see today's priorities, energy, last night's review and this week's experiments. The briefing includes them too.
+- **UI:**
+  - The Review view: morning card, evening card, This week tiles with energy by day, experiments (Kept / Partly / Skipped), rollup, and Core Memory.
+  - The top bar shows a green "Morning check-in" / "Evening review" chip when one is due.
+- **Tested:** 71 tests. The demo on the Mac's 4B model gave a good calendar-aware morning reply and a good evening tip.
+  - The rollup was fixed to write to "you" and to use numbers exactly as given; the 4B model still overreaches a little.
+- **Not yet:** push notifications for check-ins (Phase 7; Web Push works for home-screen apps on iOS). Running data in the rollup (Phase 4).
+
 ## Next
 
-- **More action kinds:** move or reschedule a block, pinning the briefing, and Relay drafting email replies. Sending mail always asks.
-- **Phase 1.6 (voice) or Phase 3 (Delta check-ins and the weekly rollup):** ask the user which comes first.
+- **Phase 4: Running (Vector).** Health Auto Export from the Apple Watch posts to the hub, then runs, paces, and the run plan in the calendar.
+- **Or Phase 1.6: voice.** Ask the user.
 
 ## Things to keep in mind
 

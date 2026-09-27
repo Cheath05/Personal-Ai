@@ -18,8 +18,10 @@ jobs:
   briefing:      { policy: local,             lane: background,  max_tokens: 1200 }
   briefing_now:  { policy: local,             lane: interactive, max_tokens: 1200 }   # "Write it now" on the Today view
   syllabus:      { policy: local,             lane: interactive, max_tokens: 1500 }   # dates from a syllabus, as JSON
+  rollup_now:    { policy: local_then_claude, lane: interactive, tier: deep, effort: high, max_tokens: 2000 }  # "Write it now"
+  sigma_patterns: { policy: local,            lane: background,  max_tokens: 600 }    # nightly Core Memory candidates
   triage:        { policy: local,             lane: background,  max_tokens: 600 }
   checkin:       { policy: local,             lane: interactive, max_tokens: 800 }
   plan_week:     { policy: local_then_claude, lane: interactive, tier: default, effort: high, max_tokens: 2000 }
-  weekly_rollup: { policy: claude,            lane: background,  tier: deep,    effort: high, max_tokens: 3000 }
+  weekly_rollup: { policy: claude,            lane: interactive, tier: deep,    effort: high, max_tokens: 3000 }  # G14 first when Claude isn't set up
   long_doc:      { policy: claude,            lane: background,  tier: cheap,   max_tokens: 2000 }

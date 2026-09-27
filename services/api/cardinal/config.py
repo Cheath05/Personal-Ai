@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     briefing_time: str = "06:00"
     scheduler: bool = True
 
+    # Delta's check-ins and weekly rollup (Sundays), and Sigma's nightly Core Memory pass. Local time.
+    morning_checkin: str = "07:00"
+    evening_checkin: str = "21:30"
+    rollup_time: str = "18:00"
+    sigma_time: str = "02:00"
+
 
 @lru_cache
 def get_settings() -> Settings:

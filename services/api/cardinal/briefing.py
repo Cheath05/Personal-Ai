@@ -49,7 +49,10 @@ async def write_briefing(session: Session, router: BrainRouter, ordinal: Agent, 
     if not connected(snap):
         raise BriefingError("Nothing is connected yet. Connect Google or Blackboard on the Today view first.")
     now = now or datetime.now(today.tz)
-    system = ordinal.system_prompt(now=now, context=context_text(snap, set(ACCESS)))
+    from . import review
+    extra = review.context_text(session, now)
+    system = ordinal.system_prompt(now=now, context=context_text(snap, set(ACCESS)) + (f"\n{extra}" if extra else ""),
+                                   memory=review.memory_text(session))
     job = "briefing" if trigger == "scheduled" else "briefing_now"
     try:
         result = await router.run(session, agent_id=ordinal.id, job=job, system=system,
@@ -76,12 +79,43 @@ async def run_scheduler(state, settings) -> None:
     """Checks every 30 s. Also catches up if the hub was off at 6:00.
 
     Each morning: Ordinal's briefing, then Axiom's study-block suggestions (which wait for your OK)."""
+    from . import review
     from .planner import plan_study
 
     tz = ZoneInfo(settings.timezone)
     last_try: datetime | None = None
     last_plan_day: str | None = None
+    last_sigma_day: str | None = None
+    last_rollup_try: datetime | None = None
     while True:
+        try:  # Delta's weekly rollup, Sundays at rollup_time (retries every 15 min if no brain answered)
+            now = datetime.now(tz)
+            with Session(get_engine()) as session:
+                last = review.latest_rollup(session)
+                if (review.rollup_due(now, settings.rollup_time, last.week_start if last else None)
+                        and (last_rollup_try is None or now - last_rollup_try >= RETRY_AFTER)):
+                    last_rollup_try = now
+                    snap = await state.today.snapshot(session)
+                    due = "; ".join(f"{d['title']} ({d['due'][:10]})" for d in snap["due"][:8])
+                    r = await review.write_rollup(session, state.router, state.agents["delta"], state.actions,
+                                                  now=now, due_text=due)
+                    log.info("Weekly rollup written for %s on %s", r.week_start, r.brain)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Weekly rollup failed")
+        try:  # Sigma's nightly Core Memory pass
+            now = datetime.now(tz)
+            hh, mm = (int(x) for x in settings.sigma_time.split(":"))
+            if now.time() >= time(hh, mm) and last_sigma_day != local_day(now) and getattr(state, "actions", None):
+                last_sigma_day = local_day(now)
+                with Session(get_engine()) as session:
+                    n = await review.sigma_nightly(session, state.router, state.agents["sigma"], state.actions, now)
+                    log.info("Sigma proposed %s Core Memory patterns", n)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Sigma's nightly pass failed")
         try:
             now = datetime.now(tz)
             hh, mm = (int(x) for x in settings.briefing_time.split(":"))

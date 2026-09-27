@@ -232,3 +232,10 @@ def test_fill_time_does_not_borrow_another_items_time():
     assert syllabus.fill_time({"date": "Sep 12", "title": "Project 0 due", "time": ""}, row)["time"] == "23:59"
     assert syllabus.fill_time({"date": "2026-09-30", "title": "HW 4 due", "time": ""},
                               "Wed Sep 30 | Vector spaces | HW 4 due 11:59 PM")["time"] == "23:59"
+
+
+async def test_added_item_is_complete_after_the_google_copy(gsettings, tmp_path, session):  # noqa: F811
+    today = make_today(gsettings, tmp_path, [])
+    await connect(today, session)
+    item, _ = await today.calendar.add(session, title="Gym", day=today.calendar.today(), start="07:00")
+    assert item.model_dump()["title"] == "Gym" and item.model_dump()["google_event_id"]

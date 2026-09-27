@@ -502,7 +502,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | 2a. Life Dashboard: read ✅ | Hub | Google sign-in (read-only, encrypted tokens), Calendar + Gmail for personal and UMBC, Blackboard feed, Today view, Ordinal's 6:00 briefing, per-agent data access enforced in code |
 | 2a+. Calendar ✅ | Hub | Day calendar view (a week back), add/remove your own items, "Cardinal" Google calendar that shows in Apple Calendar, iCloud/other calendar links, syllabus import (link, photo, PDF, text) with review before adding |
 | 2b. Life Dashboard: act ✅ | Hub | Action Preview queue (Authorize / Always allow / Deny), narrow **trust rules** with an always-ask list enforced in code, Activity Log with Undo, Sigma's rule suggestions, Axiom's study-block planner (ghost blocks on the calendar) |
-| 3. Executive Assistant | Mac | Delta check-ins and weekly rollup, Core Memory v1 |
+| 3. Executive Assistant ✅ | Hub | Delta's morning check-in and evening review, weekly rollup with a plan you authorize, experiments, Core Memory v1 with Sigma's nightly patterns (shown to you first) |
 | 4. Running | Mac + iPhone | Health Auto Export, Vector, pace zones, run plan |
 | 5. Second Brain | Mac | Axiom ingestion, notes, flashcards, exam mode |
 | 6. Full Workforce | Mac | Relay drafts, Sigma patterns, Radix, ActivityWatch |

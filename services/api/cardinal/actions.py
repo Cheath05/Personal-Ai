@@ -6,7 +6,7 @@ covered by a rule. This module is the only code path that executes changes.
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from .calendar import Calendar, CalendarError
-from .db import Action, TrustRule, utcnow
+from .db import Action, Experiment, Memory, TrustRule, utcnow
 
 # Never automatic, whatever rules exist: these can't be undone, or they speak or pay for you (PLAN §6).
 ALWAYS_ASK = {
@@ -52,6 +52,8 @@ class Kind:
     preview: Callable[[dict, ZoneInfo], dict]
     rule_from: Callable[[dict, str], tuple[dict, str]]  # (conditions, description)
     matches: Callable[[dict, dict], bool]
+    execute: Callable[["Actions", Session, Action, dict], Awaitable[dict]]  # returns what undo needs
+    undo: Callable[["Actions", Session, dict], Awaitable[None]]
 
 
 # ---------- calendar.add_block: put a block on the Cardinal calendar ----------
@@ -78,9 +80,89 @@ def _block_matches(cond: dict, p: dict) -> bool:
     return (e - s <= cond["max_minutes"] and s >= minutes(cond["earliest"]) and e <= minutes(cond["latest"]))
 
 
+async def _block_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    item, warning = await svc.calendar.add(
+        session, title=p["title"], day=date.fromisoformat(p["date"]), start=p["start"], end=p["end"],
+        kind="reading", course=p.get("course"), notes=p.get("notes"), source=f"action:{a.id}")
+    return {"item_id": item.id, "warning": warning}
+
+
+async def _block_undo(svc: "Actions", session: Session, result: dict) -> None:
+    try:
+        await svc.calendar.delete(session, result["item_id"])
+    except CalendarError:
+        pass  # already removed by hand
+
+
+# ---------- memory.add: Sigma saves a pattern to Core Memory ----------
+
+def _memory_preview(p: dict, tz: ZoneInfo) -> dict:
+    return {"change": "Add to Core Memory (every agent will read it)", "before": "Not known",
+            "after": p["text"], "where": "Core Memory, in Review. You can edit or delete it."}
+
+
+def _memory_rule(p: dict, agent_name: str) -> tuple[dict, str]:
+    return {}, (f"{agent_name} may save new patterns to Core Memory without asking. "
+                "You still get a note with Undo, and you can edit or delete any memory.")
+
+
+async def _memory_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    m = Memory(kind=p.get("kind", "pattern"), text=p["text"][:300], evidence=(p.get("evidence") or "")[:500] or None,
+               confidence=float(p.get("confidence", 0.6)), source="sigma")
+    session.add(m)
+    session.commit()
+    session.refresh(m)
+    return {"memory_id": m.id}
+
+
+async def _memory_undo(svc: "Actions", session: Session, result: dict) -> None:
+    m = session.get(Memory, result.get("memory_id"))
+    if m:
+        session.delete(m)
+        session.commit()
+
+
+# ---------- plan.set_week: Delta's plan for next week (focus + experiments) ----------
+
+def _plan_preview(p: dict, tz: ZoneInfo) -> dict:
+    d = date.fromisoformat(p["week_start"])
+    focus = "; ".join(p.get("focus", [])) or "none"
+    exps = "; ".join(p.get("experiments", [])) or "none"
+    return {"change": f"Set your plan for the week of {d:%a} {d.day} {d:%b}", "before": "No plan yet",
+            "after": f"Focus: {focus} · Experiments: {exps}", "where": "Review → This week"}
+
+
+def _plan_rule(p: dict, agent_name: str) -> tuple[dict, str]:
+    return {}, (f"{agent_name} may set your weekly focus and experiments each Sunday without asking. "
+                "You still get a note with Undo.")
+
+
+async def _plan_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    ids = []
+    for text in p.get("experiments", [])[:3]:
+        e = Experiment(week_start=p["week_start"], text=text[:200])
+        session.add(e)
+        session.commit()
+        session.refresh(e)
+        ids.append(e.id)
+    return {"experiment_ids": ids}
+
+
+async def _plan_undo(svc: "Actions", session: Session, result: dict) -> None:
+    for eid in result.get("experiment_ids", []):
+        e = session.get(Experiment, eid)
+        if e:
+            session.delete(e)
+    session.commit()
+
+
 KINDS = {
     "calendar.add_block": Kind("calendar.add_block", "Add a calendar block", True,
-                               _block_preview, _block_rule, _block_matches),
+                               _block_preview, _block_rule, _block_matches, _block_execute, _block_undo),
+    "memory.add": Kind("memory.add", "Save to Core Memory", True,
+                       _memory_preview, _memory_rule, lambda cond, p: True, _memory_execute, _memory_undo),
+    "plan.set_week": Kind("plan.set_week", "Set next week's plan", True,
+                          _plan_preview, _plan_rule, lambda cond, p: True, _plan_execute, _plan_undo),
 }
 
 
@@ -274,13 +356,10 @@ class Actions:
         p = json.loads(a.payload)
         a.decided_at = utcnow()
         try:
-            if a.kind == "calendar.add_block":
-                item, warning = await self.calendar.add(
-                    session, title=p["title"], day=date.fromisoformat(p["date"]), start=p["start"], end=p["end"],
-                    kind="reading", course=p.get("course"), notes=p.get("notes"), source=f"action:{a.id}")
-                a.result = json.dumps({"item_id": item.id, "warning": warning})
-            else:
+            kind = KINDS.get(a.kind)
+            if not kind:
                 raise ActionError(f"No way to run {a.kind} yet.")
+            a.result = json.dumps(await kind.execute(self, session, a, p))
             a.status, a.executed_at, a.error = "executed", utcnow(), None
             if rule and by_rule:
                 a.rule_id = rule.id
@@ -298,12 +377,7 @@ class Actions:
         info = self.to_json(a)
         if not info["can_undo"]:
             raise ActionError("This can't be undone any more.")
-        result = json.loads(a.result or "{}")
-        if a.kind == "calendar.add_block":
-            try:
-                await self.calendar.delete(session, result["item_id"])
-            except CalendarError:
-                pass  # already removed by hand
+        await KINDS[a.kind].undo(self, session, json.loads(a.result or "{}"))
         a.status = "undone"
         session.add(a)
         session.commit()

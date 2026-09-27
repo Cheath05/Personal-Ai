@@ -186,6 +186,7 @@ class Calendar:
         session.commit()
         session.refresh(item)
         warning = await self._mirror(session, item) if mirror else None
+        session.refresh(item)  # saving the Google copy expired it
         self.invalidate()
         return item, warning
 

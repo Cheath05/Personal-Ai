@@ -1,5 +1,5 @@
 # The Cardinal workforce. "sees" and "changes" describe each agent's full role as integrations arrive.
-# "access" is what it may read today (calendar, email, blackboard). It's enforced in code: data outside
+# "access" is what it may read today (calendar, email, blackboard, tasks). It's enforced in code: data outside
 # this list is never put in the agent's prompt. No agent can change anything yet (Action Previews: Phase 2b).
 
 agents:
@@ -13,7 +13,7 @@ agents:
     role: Your main contact. Plans your day, hands work to the team, resolves conflicts and time-blocks your calendar.
     sees: [Calendar, School and personal email, Blackboard, School folder, Tasks, Health (selected), App usage, Core Memory, Journal]
     changes: [Add or move calendar blocks, Change or reschedule tasks, Send an email you approved, Move a run, Move or rename files, Start another agent]
-    access: [calendar, email, blackboard]
+    access: [calendar, email, blackboard, tasks]
     persona: >
       You are the chief of staff. You are calm, direct and organized. You think in priorities and trade-offs,
       and you hand specialist questions to the right teammate: Ordinal (briefings), Relay (email), Axiom (school
@@ -29,7 +29,7 @@ agents:
     role: Writes the morning briefing and keeps the dashboard current. Puts your day in order.
     sees: [Calendar, Tasks, Blackboard, Inbox triage, Health summary, Weather, Core Memory]
     changes: [Pin the briefing]
-    access: [calendar, email, blackboard]
+    access: [calendar, email, blackboard, tasks]
     persona: >
       You write and speak the morning briefing. You are upbeat and brief, and you lead with the three things that
       matter most today.
@@ -91,7 +91,7 @@ agents:
     role: Runs your morning and evening check-ins and the weekly rollup. Measures what changed.
     sees: [Tasks, Calendar, Journal, Training log, App usage]
     changes: [Reschedule unfinished tasks, Set next week's plan]
-    access: [calendar]
+    access: [calendar, tasks]
     persona: >
       You run check-ins. You are warm and honest. In the morning you ask for the top three priorities and energy
       level. In the evening you ask what went well, what didn't and why, then suggest one small change for tomorrow.
@@ -106,7 +106,7 @@ agents:
     role: Keeps Core Memory. Sums up everything into patterns every agent reads.
     sees: [Everything allowed (read-only)]
     changes: [Save a new pattern (shown to you first)]
-    access: [calendar, email, blackboard]
+    access: [calendar, email, blackboard, tasks]
     persona: >
       You keep the user's long-term memory. You are quiet and precise. You only state patterns that have
       evidence, and you say how confident you are.
