@@ -1,40 +1,42 @@
-# Next session: hub on the Proxmox server (Phase 1.5)
+# Next session: Windows (G14) check-up
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
 ## Where things stand (27 Sep 2026)
 
-- **Phase 0 done:** API, brain router, usage readout, Nexus web app. 27 tests pass on the Mac and on Windows.
-- **Mac:** Ollama runs at login with `qwen3:4b-instruct` (~29 tok/s). A real chat ran locally in ~4 s for $0.
-- **G14:**
-  - `qwen3:8b` runs fully on the GPU at ~44–46 tok/s with `"think": false`.
-  - A loaded model uses ~7.2 of the 8 GB of VRAM, so GPU voice won't fit beside it.
-  - `OLLAMA_HOST=0.0.0.0` is set. The firewall rule "Ollama (Cardinal, Mac over WireGuard)" allows TCP 11434 only from 10.10.20.3.
-  - The tray app didn't start the server on first launch, so `ollama serve` was started by hand. Check that Ollama starts after a reboot.
-- **Mac → G14 test failed.** `curl http://10.10.20.6:11434` timed out from the Mac (10.10.20.3), although the Mac reaches Proxmox (10.10.10.5) fine over the same WireGuard tunnel. Two WireGuard clients can't reach each other, either because of the OPNsense rules or the G14 tunnel's AllowedIPs.
-  - **Decision:** don't change WireGuard or OPNsense. Put Tailscale on every device instead, which the hub needs anyway.
-- **Hub decision:** the Proxmox Ubuntu VM hosts the hub for now. An M6 Mac mini (24–32 GB) may replace it later; that only means re-running the setup and editing `brains.yaml`.
-- Branch: `cardinal-foundation` (pushed). `main` is still the initial commit. No Claude API key is set.
+- **The hub is live on Proxmox:** https://cardinal.tailaf3b0c.ts.net (Tailscale only).
+  - Ubuntu 26.04 VM `ubun`, user `usr1`, repo at `~/Personal-Ai`.
+  - Runs as the `cardinal` systemd service, with a nightly database backup to `~/cardinal-backups`.
+  - To reach it: `ssh usr1@cardinal` (Tailscale SSH, no password).
+  - `sudo` needs the user's password. Ask them to run anything that needs it.
+- **Brains the hub uses:**
+  - **G14:** Tailscale name `alex-windows`, `qwen3:8b` on the GPU at ~45 tok/s. Interactive chats go here first.
+  - **Server:** `qwen3:4b-instruct` on the CPU at ~10 tok/s, with CPU type `host` for AVX2. Kept loaded.
+  - The Mac brain is left out: its Ollama only listens on the Mac itself.
+- **Tailscale devices:** `cardinal`, `alex-windows`, `m3-air`, `iphone-17-pro-max`.
+- **Web app:**
+  - Motion is now a per-device choice (System Call → Motion), set to full by default.
+  - Windows used to freeze every animation, because "Animation effects: off" makes browsers report `prefers-reduced-motion`.
+  - The thinking "clock hand" sweep was removed.
 
-## Steps for this session
+## Steps for the Windows session
 
-PLAN.md §3 has the details.
-
-1. **Resize the VM in Proxmox:** 4 vCPU, 10 GB RAM with ballooning off, and 100 GB disk. Then grow the disk inside Ubuntu.
-2. **Tailscale admin console:** turn on MagicDNS and HTTPS Certificates.
-3. **On the VM:** clone the repo to `~/cardinal` and run `infra/setup-hub.sh`. If the repo is private, git asks for a GitHub username and a personal access token.
-4. **Tailscale on the G14, Mac and iPhone:**
-   - Rename the machines `g14` and `mac` in the admin console.
-   - Add the G14 firewall rule for `100.64.0.0/10` (command in PLAN §3).
-5. **Check:**
-   - Open `https://cardinal.<tailnet>.ts.net` from the Mac. The Access view should show the G14 and the server Online.
-   - Send a chat and confirm it routes to the G14.
-   - Turn the G14 off and confirm the server answers.
-6. **iPhone:** Add to Home Screen from Safari.
-7. The hub is now the only place memory lives. Stop using `./scripts/dev.sh` on the laptops except for development. The Mac's `data/cardinal.db` is empty, so there's nothing to copy.
+1. `git pull` on branch `cardinal-foundation`.
+2. **Animations:** open the hub URL in Edge or Chrome and press Ctrl+Shift+R. The Nexus should animate: orbiting nodes, rotating rings, and pulses when sending a message.
+   - If it's still frozen, check the DevTools console (F12) for errors.
+   - Check that `document.documentElement.dataset.motion` is `"full"`.
+   - Check whether hardware acceleration is off in the browser settings.
+   - Then fix the app, not the Windows setting.
+3. **Install it as an app:** Edge → ⋯ → Apps → Install this site as an app.
+4. **Make Ollama reliable after a reboot.** On first launch the tray app didn't start the server, so `ollama serve` was started by hand.
+   - Make Ollama start at login with `OLLAMA_HOST=0.0.0.0`.
+   - Reboot, then confirm the hub sees the G14: `curl.exe https://cardinal.tailaf3b0c.ts.net/api/brains` should show `g14` `online: true`.
+5. **Firewall tidy-up:** the old rule "Ollama (Cardinal, Mac over WireGuard)" is no longer used. The Tailscale rule for `100.64.0.0/10` replaces it. Ask before removing it.
+6. Push, and update this file.
 
 ## Things to keep in mind
 
-- Don't keep the G14 on all the time. When it's off, the router falls back to the Mac, then the server, then Claude within the $20 cap.
-- Never commit `.env` or API keys. Don't touch OPNsense/WireGuard; ask first if something seems to need it.
-- Every agent action must be previewed and approved. Trust rules come in Phase 2.
+- **One memory.** Real use goes through the hub URL. `scripts/dev.ps1` starts a separate, empty local copy for development only.
+- **The G14 doesn't need to stay on.** When it's off, the hub uses the server brain, and Claude within the $20 cap if a key is ever added.
+- **Voice (Phase 1.6) is next after this.** `qwen3:8b` already uses ~7.2 of the G14's 8 GB of VRAM, so GPU voice needs a plan: a smaller model while talking, or voice on the Mac and iPhone. Discuss it with the user before building.
+- Never commit `.env` or API keys. Don't touch OPNsense or WireGuard. Every agent action must be previewed and approved.

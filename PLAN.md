@@ -174,8 +174,7 @@ A model's weights don't change on their own as you use it. Cardinal gets better 
 
 **Where the hub lives:**
 
-- **Now:** on the Mac, for testing.
-- **Next (Phase 1.5, decided):** on the Proxmox VM, where it's always on. Moving it is a file copy: `data/cardinal.db` goes to the server.
+- **Now:** on the Proxmox VM (`https://cardinal.tailaf3b0c.ts.net`), always on. The laptops only run a local copy for development.
 - **Maybe later:** an M6 Mac mini with 24–32 GB could be both the hub and the main brain. Moving there is the same setup plus a `brains.yaml` edit.
 
 ### 2.6 Is the Proxmox server still worth it? Yes, as the hub
@@ -241,7 +240,7 @@ Tailscale only makes outbound connections, so OPNsense needs no port forwards or
 
 **4. Install the Tailscale app** on your iPhone, Mac and G14, signed in to the same account.
 
-- In the admin console, rename the laptops to **`g14`** and **`mac`**. The hub's `brains.yaml` reaches them by those names.
+- The hub's `brains.yaml` reaches the G14 by its Tailscale machine name (`alex-windows`).
 - On the G14, allow Ollama from Tailscale. In an admin PowerShell:
 
   ```powershell
@@ -249,7 +248,7 @@ Tailscale only makes outbound connections, so OPNsense needs no port forwards or
   ```
 
   Only your own devices have addresses in that range.
-- The Mac brain is optional. It needs Ollama exposed to the network, which isn't set up yet. Until then the hub skips it, and replies come from the server brain whenever the G14 is off.
+- The Mac brain is left out of the hub. Its Ollama only listens on the Mac itself, and the Mac is often on campus Wi-Fi. The server now runs the same model (~10 tok/s with CPU type `host`), so it adds little.
 
 **5. On the iPhone:** open the `https://cardinal…ts.net` address in Safari, then Share → **Add to Home Screen**.
 
@@ -498,7 +497,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 |---|---|---|
 | 0. Foundation ✅ | Mac | Repo, FastAPI + SQLite, web app (no build step), Nexus canvas, brain router with budget guard, usage tracking and readout, chat with every agent |
 | 1. Local brains ✅ | Mac + G14 | Ollama on the Mac (Qwen3 4B instruct, ~29 tok/s) and the G14 (Qwen3 8B on the GPU, ~45 tok/s) |
-| **1.5. Hub on Proxmox** | Server | Move the hub and database to the Ubuntu VM, Tailscale HTTPS, install on the iPhone, background brain on the server CPU, nightly backups. Moved up from Phase 7 so all devices share one memory early. |
+| 1.5. Hub on Proxmox ✅ | Server | Move the hub and database to the Ubuntu VM, Tailscale HTTPS, install on the iPhone, background brain on the server CPU, nightly backups. Moved up from Phase 7 so all devices share one memory early. |
 | 1.6. Voice | Mac + G14 + iPhone | Pipecat voice (Whisper, Kokoro, Chatterbox-Turbo), talking to agents out loud |
 | 2. Life Dashboard | Mac | Google Calendar, personal Gmail + UMBC, Blackboard feed, Ordinal's briefing, Action Preview queue + **trust rules** |
 | 3. Executive Assistant | Mac | Delta check-ins and weekly rollup, Core Memory v1 |

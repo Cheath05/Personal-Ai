@@ -50,24 +50,21 @@ BRAINS="$API/config/brains.yaml"
 if [[ ! -f "$BRAINS" ]]; then
   # On the hub the server brain is this machine; the laptops are reached by their Tailscale names.
   cat >"$BRAINS" <<'YAML'
-# Brains as seen from the hub (Proxmox VM). Laptop names are Tailscale machine names.
+# Brains as seen from the hub (Proxmox VM). Laptops are reached by their Tailscale machine names.
+# The Mac's Ollama only listens on the Mac itself, so it isn't listed here.
 local:
   g14:
-    url: "http://g14:11434"
+    url: "http://alex-windows:11434"     # the G14's Tailscale machine name
     model: "qwen3:8b"
     label: "ROG G14 · RTX 4060"
-  mac:
-    url: "http://mac:11434"
-    model: "qwen3:4b-instruct"
-    label: "M3 MacBook Air"
   server:
     url: "http://localhost:11434"
     model: "qwen3:4b-instruct"
     label: "Proxmox server"
 
 order:
-  interactive: [g14, mac, server]
-  background: [server, g14, mac]
+  interactive: [g14, server]
+  background: [server, g14]
 
 claude:
   default: "claude-sonnet-5"
