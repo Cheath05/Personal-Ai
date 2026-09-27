@@ -133,6 +133,7 @@ UNIT
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now cardinal-backup.timer >/dev/null
+sudo "$REPO/infra/install-auto-update.sh" "$RUN_AS"
 sudo systemctl enable cardinal >/dev/null
 sudo systemctl restart cardinal
 for _ in $(seq 1 20); do curl -sf "localhost:$PORT/api/health" >/dev/null && break; sleep 1; done
@@ -154,7 +155,8 @@ step "Done"
 echo "Cardinal:  $URL"
 echo "Brains:    curl -s localhost:$PORT/api/brains"
 echo "Logs:      journalctl -u cardinal -f"
-echo "Update:    $REPO/infra/setup-hub.sh  (pulls and restarts)"
+echo "Updates:   automatic every 5 minutes (journalctl -u cardinal-update)"
+echo "           $REPO/infra/setup-hub.sh applies system-level changes by hand"
 echo
 echo "If the HTTPS address doesn't load, turn on MagicDNS and HTTPS Certificates"
 echo "in the Tailscale admin console (DNS page), then run: sudo tailscale serve --bg $PORT"

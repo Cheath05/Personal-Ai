@@ -71,10 +71,18 @@ On the Ubuntu VM, as your normal user:
 ```bash
 sudo apt install -y git
 git clone -b cardinal-foundation https://github.com/Cheath05/Personal-Ai.git ~/cardinal
-~/cardinal/infra/setup-hub.sh      # run again any time to update
+~/cardinal/infra/setup-hub.sh
 ```
 
-Cardinal then runs around the clock at `https://cardinal.<your-tailnet>.ts.net`, with nightly database backups. See PLAN.md §3 for the VM size and the Tailscale steps.
+Cardinal then runs around the clock at `https://cardinal.<your-tailnet>.ts.net`, with nightly database backups.
+
+**Updates are automatic.** Every 5 minutes the hub checks the `cardinal-foundation` branch for new commits. When it finds some, it:
+
+1. backs up the database,
+2. pulls the new code,
+3. restarts Cardinal.
+
+If Cardinal doesn't come back healthy, the hub rolls back to the previous commit and skips the bad one. See what happened with `journalctl -u cardinal-update`. Changes to `setup-hub.sh` itself, such as new services or packages, still need you to run it by hand. See PLAN.md §3 for the VM size and the Tailscale steps.
 
 ## Tests
 
