@@ -45,12 +45,15 @@ ollama pull qwen3:4b-instruct   # about 2.5 GB; answers directly (the plain qwen
 
 **On the ROG G14 (Windows 11, RTX 4060):**
 
-1. Install Ollama from ollama.com.
+1. Install Ollama: `winget install Ollama.Ollama`.
 2. In PowerShell, run `ollama pull qwen3:8b`.
-3. Let the Mac reach it: set the user environment variable `OLLAMA_HOST` to `0.0.0.0`, then restart Ollama.
-4. Allow TCP port 11434 in Windows Firewall for **Private** networks only.
+3. In an admin PowerShell, run `.\scripts\g14-ollama-task.ps1`. It runs the Ollama server from boot (before login, with no window) and restarts it within 5 minutes if it stops.
+4. Allow Ollama from your Tailscale devices only (admin PowerShell):
+   ```powershell
+   New-NetFirewallRule -DisplayName "Ollama (Cardinal, Tailscale)" -Direction Inbound -Protocol TCP -LocalPort 11434 -RemoteAddress 100.64.0.0/10 -Action Allow
+   ```
 
-Ollama has no password, so keep it on your home network. Later, Tailscale replaces this.
+Ollama has no password. If Windows asks whether to let `ollama.exe` through the firewall, click **Cancel**: allowing it opens Ollama to everyone on public Wi-Fi.
 
 **Point Cardinal at your machines:**
 
