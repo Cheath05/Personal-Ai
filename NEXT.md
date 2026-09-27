@@ -16,7 +16,7 @@ Start here when picking the project up on another machine. PLAN.md has the full 
     - **Anything pushed to `cardinal-foundation` goes live within 5 minutes**, so run the tests before pushing.
 - **Brains:** the hub's `brains.yaml` now lists `g14` → `mac` → `server`. The `mac` entry was added on 27 Sep; the old file is `brains.yaml.bak-2026-09-27`.
   - **G14:** Tailscale name `alex-windows`, `qwen3:8b` on the GPU at ~40–45 tok/s. Online.
-  - **Mac:** `m3-air`, `qwen3:4b-instruct` at ~29 tok/s. Offline until the steps below are done.
+  - **Mac:** `m3-air`, `qwen3:4b-instruct` at ~29 tok/s. Listed on the hub (it has restarted), Offline until `tailscale serve` is set up on the Mac.
   - **Server:** `qwen3:4b-instruct` on the CPU at ~10 tok/s. Kept loaded.
   - **iPhone:** not a brain, and it can't be one. iOS can't run Ollama or serve a model to other devices. It's a client that shows up as a device tag on messages, and in Phase 1.6 it runs voice (Whisper and Kokoro in Safari), not thinking.
 - **Tailscale devices:** `cardinal`, `alex-windows`, `m3-air`, `iphone-17-pro-max`.
@@ -42,9 +42,8 @@ Start here when picking the project up on another machine. PLAN.md has the full 
    # CLI path if `tailscale` isn't on PATH: /Applications/Tailscale.app/Contents/MacOS/Tailscale
    ```
    Then from the Mac or G14: `curl http://m3-air:11434/api/version`.
-3. **Restart the hub** so it reads the new `brains.yaml`: `ssh usr1@cardinal 'sudo -n systemctl restart cardinal'`. No password needed; the sudoers rule allows it.
-4. Check `curl https://cardinal.tailaf3b0c.ts.net/api/brains` shows `mac` `online: true`, and that the Access view lists three brains.
-5. Push, and update this file.
+3. Check `curl https://cardinal.tailaf3b0c.ts.net/api/brains` shows `mac` `online: true`, and that the Access view lists three brains.
+4. Push, and update this file.
 
 ## Things to keep in mind
 
