@@ -72,11 +72,12 @@
           </aside>
 
           <aside class="panel convo">
-            <div class="ph"><span class="t" id="c-title">Conversation</span><span class="m" id="c-state">IDLE</span></div>
+            <div class="ph"><span class="t" id="c-title">Conversation</span>
+              <span class="ph-r"><button type="button" class="linkish" id="c-clear" title="Clear this conversation">Clear</button><span class="m" id="c-state">IDLE</span></span></div>
             <div class="transcript" id="transcript" aria-live="polite"></div>
             <form class="composer" id="composer" autocomplete="off">
               <label class="sr-only" for="composer-input">Message</label>
-              <input id="composer-input" type="text" placeholder="Message Cardinal" maxlength="8000">
+              <textarea id="composer-input" rows="1" placeholder="Message Cardinal" maxlength="8000" enterkeyhint="send"></textarea>
               <button class="btn primary" type="submit" id="send">Send</button>
             </form>
           </aside>

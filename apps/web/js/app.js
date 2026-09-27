@@ -221,6 +221,7 @@ async function send(text, { askClaude = false } = {}) {
   box.scrollTop = box.scrollHeight;
   state.busy = true;
   $("send").disabled = true;
+  $("c-clear").disabled = true;
   setCoreState("thinking");
   try {
     const res = askClaude ? await api.askClaude(a.id) : await api.chat(a.id, text);
@@ -242,19 +243,50 @@ async function send(text, { askClaude = false } = {}) {
   } finally {
     state.busy = false;
     $("send").disabled = false;
+    $("c-clear").disabled = false;
     setCoreState("idle");
     box.scrollTop = box.scrollHeight;
     refreshUsage();
   }
 }
 
+// The message box grows with what you type (up to 3 lines, then it scrolls).
+const composerInput = $("composer-input");
+function fitComposer() {
+  const max = parseFloat(getComputedStyle(composerInput).maxHeight) || 85;
+  composerInput.style.height = "auto";
+  const h = Math.min(composerInput.scrollHeight + 2, max);
+  composerInput.style.height = `${Math.max(h, 43)}px`;
+  composerInput.style.overflowY = composerInput.scrollHeight + 2 > max ? "auto" : "hidden";
+}
+composerInput.addEventListener("input", fitComposer);
+// Enter sends on a keyboard; on a phone, return adds a line and the Send button sends. Shift+Enter always adds a line.
+const touchOnly = window.matchMedia("(pointer: coarse)").matches;
+composerInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !touchOnly) {
+    e.preventDefault();
+    $("composer").requestSubmit();
+  }
+});
+
 $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
-  const input = $("composer-input");
-  const text = input.value.trim();
+  const text = composerInput.value.trim();
   if (!text) return;
-  input.value = "";
+  composerInput.value = "";
+  fitComposer();
   send(text);
+});
+
+$("c-clear").addEventListener("click", async () => {
+  const a = state.agents[state.sel];
+  if (!a || state.busy) return;
+  if (!confirm(`Clear your conversation with ${a.name}? Check-ins, your calendar, Core Memory and anything waiting for your OK aren't affected.`)) return;
+  try {
+    await api.clearChat(a.id);
+    $("transcript").replaceChildren(el("p", "empty", `Cleared. Say hello to ${a.name}.`));
+    toast(`Conversation with ${a.name} cleared.`);
+  } catch (err) { toast(err.message); }
 });
 
 /* ---------- Usage (low-key chip + popover) ---------- */

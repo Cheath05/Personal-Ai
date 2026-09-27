@@ -107,6 +107,17 @@ def messages(agent_id: str, limit: int = 40, session: Session = Depends(get_sess
     return [message_json(m, session) for m in reversed(rows)]
 
 
+@app.delete("/api/agents/{agent_id}/messages")
+def clear_messages(agent_id: str, session: Session = Depends(get_session)):
+    """Clear a conversation. Check-ins, calendar items, memories and pending approvals are separate and stay."""
+    get_agent(agent_id)
+    rows = session.exec(select(Message).where(Message.agent_id == agent_id)).all()
+    for m in rows:
+        session.delete(m)
+    session.commit()
+    return {"cleared": len(rows)}
+
+
 def message_json(m: Message, session: Session) -> dict:
     """A chat message, with the current state of any change it proposed (so its card can be shown)."""
     out = m.model_dump(exclude={"action_ids", "changes"})

@@ -53,3 +53,12 @@ def test_web_app_is_served(client):
 def test_privacy_policy_is_public_page(client):
     r = client.get("/privacy.html")
     assert r.status_code == 200 and "Google API Services User Data Policy" in r.text
+
+
+def test_clearing_a_chat_only_clears_that_agent(client):
+    client.post("/api/chat", json={"agent_id": "vector", "message": "hi"})
+    client.post("/api/chat", json={"agent_id": "relay", "message": "hi"})
+    assert client.delete("/api/agents/vector/messages").json() == {"cleared": 2}
+    assert client.get("/api/agents/vector/messages").json() == []
+    assert len(client.get("/api/agents/relay/messages").json()) == 2
+    assert client.delete("/api/agents/nobody/messages").status_code == 404

@@ -41,6 +41,7 @@ export const api = {
   agents: () => request("/api/agents"),
   brains: () => request("/api/brains"),
   messages: (agentId) => request(`/api/agents/${agentId}/messages`),
+  clearChat: (agentId) => request(`/api/agents/${agentId}/messages`, { method: "DELETE" }),
   chat: (agentId, message) => request("/api/chat", { method: "POST", body: { agent_id: agentId, message } }),
   askClaude: (agentId) => request("/api/chat", { method: "POST", body: { agent_id: agentId, retry_with_claude: true } }),
   usage: () => request("/api/usage/summary"),
