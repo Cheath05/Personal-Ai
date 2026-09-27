@@ -24,6 +24,8 @@ class Message(SQLModel, table=True):
     model: str | None = None
     brain: str | None = None
     device: str | None = None  # where you were when you sent it ("iPhone", "Mac", ...); memory is shared
+    action_ids: str | None = None  # JSON list: changes this reply proposed or made (shown as cards in the chat)
+    changes: str | None = None  # JSON list of {status, text}: what the tools actually did, shown under the reply
 
 
 class UsageEvent(SQLModel, table=True):

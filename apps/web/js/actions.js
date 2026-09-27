@@ -12,7 +12,7 @@ function el(tag, cls, text) {
 const STATUS = { executed: ["Done", "ok"], denied: ["Denied", ""], undone: ["Undone", ""], failed: ["Failed", "bad"], expired: ["Expired", ""], pending: ["Waiting", "warn"] };
 
 export function createActions({ toast, agentColor, onChange }) {
-  const st = { pending: [], auto: [], ruleFor: null };
+  const st = { pending: [], auto: [], ruleFor: null, ruleDone: null };
   const when = (iso) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
   async function afterChange(msg) {
@@ -22,8 +22,9 @@ export function createActions({ toast, agentColor, onChange }) {
   }
 
   // ---------- One card ----------
-  function card(a) {
-    const c = el("article", "act-card");
+  // opts.onDone(label) lets a card inside a chat reply collapse into a one-line result.
+  function card(a, opts = {}) {
+    const c = el("article", `act-card${opts.inChat ? " in-chat" : ""}`);
     c.style.setProperty("--ag", agentColor(a.agent_id));
     const head = el("div", "act-head");
     head.append(el("span", "act-agent", a.agent), el("span", "act-kind", a.label));
@@ -49,6 +50,7 @@ export function createActions({ toast, agentColor, onChange }) {
         $("act-dialog").close();
         if (r.action.status === "failed") toast(`Couldn't do it: ${r.action.error}`);
         if (r.suggestion) showSigma(r.suggestion);
+        opts.onDone?.(r.action.status === "executed" ? `✓ Authorized: ${a.title}` : `✗ Failed: ${r.action.error}`);
         await afterChange(r.action.status === "executed" ? "Done. It's on your calendar." : null);
       } catch (e) { toast(e.message); busy(false); }
     });
@@ -59,13 +61,15 @@ export function createActions({ toast, agentColor, onChange }) {
         busy(false);
         if (!p.allowed) { toast(p.description); return; }
         st.ruleFor = a.id;
+        st.ruleDone = opts.onDone || null;
+        st.ruleTitle = a.title;
         $("rule-text").textContent = p.description;
         $("rule-dialog").showModal();
       } catch (e) { toast(e.message); busy(false); }
     });
     deny.addEventListener("click", async () => {
       busy(true);
-      try { await api.deny(a.id); $("act-dialog").close(); await afterChange("Denied. Axiom won't suggest this one again."); }
+      try { await api.deny(a.id); $("act-dialog").close(); opts.onDone?.(`Denied: ${a.title}`); await afterChange(`Denied. ${a.agent} won't suggest this one again.`); }
       catch (e) { toast(e.message); busy(false); }
     });
     if (a.always_ask) always.hidden = true;
@@ -79,6 +83,8 @@ export function createActions({ toast, agentColor, onChange }) {
     $("rule-yes").disabled = true;
     try {
       await api.approve(id, true);
+      st.ruleDone?.(`✓ Authorized and remembered: ${st.ruleTitle}`);
+      st.ruleDone = null;
       $("rule-dialog").close();
       $("act-dialog").close();
       await afterChange("Done, and remembered. Matching study blocks will be added for you, with a note.");
@@ -191,5 +197,5 @@ export function createActions({ toast, agentColor, onChange }) {
     } catch (e) { toast(e.message); }
   }
 
-  return { refresh, open, renderAccess };
+  return { refresh, open, renderAccess, card };
 }

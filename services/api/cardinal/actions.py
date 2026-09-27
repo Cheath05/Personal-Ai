@@ -60,13 +60,13 @@ class Kind:
 
 def _block_preview(p: dict, tz: ZoneInfo) -> dict:
     d = date.fromisoformat(p["date"])
-    when = f"{d:%a} {d.day} {d:%b} · {p['start']}–{p['end']}"
+    when = f"{d:%a} {d.day} {d:%b} · " + (f"{p['start']}–{p['end']}" if p.get("start") else "all day")
     return {"change": "Add to your Cardinal calendar", "before": "Free time", "after": f"{when} · {p['title']}",
             "where": "Cardinal calendar (shows in Google and Apple Calendar)"}
 
 
 def _block_rule(p: dict, agent_name: str) -> tuple[dict, str]:
-    dur = minutes(p["end"]) - minutes(p["start"])
+    dur = minutes(p["end"]) - minutes(p["start"]) if p.get("start") and p.get("end") else 60
     cap = max(120, -(-dur // 30) * 30)
     earliest, latest = p.get("window", ["08:00", "22:00"])
     cond = {"max_minutes": cap, "earliest": earliest, "latest": latest}
@@ -77,6 +77,8 @@ def _block_rule(p: dict, agent_name: str) -> tuple[dict, str]:
 
 
 def _block_matches(cond: dict, p: dict) -> bool:
+    if not p.get("start") or not p.get("end"):
+        return False
     s, e = minutes(p["start"]), minutes(p["end"])
     return (e - s <= cond["max_minutes"] and s >= minutes(cond["earliest"]) and e <= minutes(cond["latest"]))
 
@@ -157,7 +159,76 @@ async def _plan_undo(svc: "Actions", session: Session, result: dict) -> None:
     session.commit()
 
 
+# ---------- calendar.move_item: change when something on the Cardinal calendar happens ----------
+
+def _when(p: dict) -> str:
+    d = date.fromisoformat(p["date"])
+    return f"{d:%a} {d.day} {d:%b} · " + (f"{p['start']}–{p['end']}" if p.get("start") else "all day")
+
+
+def _move_preview(p: dict, tz: ZoneInfo) -> dict:
+    return {"change": "Move it on your Cardinal calendar", "before": f"{_when(p['from'])} · {p['title']}",
+            "after": f"{_when(p)} · {p['title']}", "where": "Cardinal calendar (and Google and Apple Calendar)"}
+
+
+def _move_rule(p: dict, agent_name: str) -> tuple[dict, str]:
+    earliest, latest = p.get("window", ["06:00", "22:00"])
+    noun = p.get("noun", "items")
+    return ({"earliest": earliest, "latest": latest, "max_minutes": 240},
+            f"{agent_name} may move {noun} on your Cardinal calendar to times between {earliest} and {latest}. "
+            "You still get a note with Undo.")
+
+
+def _move_matches(cond: dict, p: dict) -> bool:
+    if not p.get("start"):
+        return False
+    return _block_matches(cond, p)
+
+
+async def _move_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    item, warning = await svc.calendar.move(session, p["item_id"], date.fromisoformat(p["date"]), p.get("start"), p.get("end"))
+    return {"item_id": item.id, "from": p["from"], "warning": warning}
+
+
+async def _move_undo(svc: "Actions", session: Session, result: dict) -> None:
+    f = result["from"]
+    try:
+        await svc.calendar.move(session, result["item_id"], date.fromisoformat(f["date"]), f.get("start"), f.get("end"))
+    except CalendarError:
+        pass
+
+
+# ---------- calendar.remove_item: always asks ----------
+
+def _remove_preview(p: dict, tz: ZoneInfo) -> dict:
+    return {"change": "Remove it from your Cardinal calendar", "before": f"{_when(p)} · {p['title']}",
+            "after": "Removed", "where": "Cardinal calendar (and Google and Apple Calendar)"}
+
+
+async def _remove_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    from .db import CalendarItem
+    item = session.get(CalendarItem, p["item_id"])
+    if not item:
+        raise ActionError("It's already gone.")
+    snap = {"title": item.title, "date": item.start.astimezone(svc.tz).date().isoformat(),
+            "start": None if item.all_day else f"{item.start.astimezone(svc.tz):%H:%M}",
+            "end": None if item.all_day else f"{item.end.astimezone(svc.tz):%H:%M}",
+            "kind": item.kind, "course": item.course, "notes": item.notes, "source": item.source}
+    await svc.calendar.delete(session, item.id)
+    return {"removed": snap}
+
+
+async def _remove_undo(svc: "Actions", session: Session, result: dict) -> None:
+    r = result["removed"]
+    await svc.calendar.add(session, title=r["title"], day=date.fromisoformat(r["date"]), start=r["start"], end=r["end"],
+                           kind=r["kind"], course=r["course"], notes=r["notes"], source=r["source"])
+
+
 KINDS = {
+    "calendar.move_item": Kind("calendar.move_item", "Move a calendar item", True,
+                               _move_preview, _move_rule, _move_matches, _move_execute, _move_undo),
+    "calendar.remove_item": Kind("calendar.remove_item", "Remove a calendar item", True,
+                                 _remove_preview, lambda p, n: ({}, ""), lambda c, p: False, _remove_execute, _remove_undo),
     "calendar.add_block": Kind("calendar.add_block", "Add a calendar block", True,
                                _block_preview, _block_rule, _block_matches, _block_execute, _block_undo),
     "memory.add": Kind("memory.add", "Save to Core Memory", True,
@@ -199,7 +270,7 @@ class Actions:
         changed = False
         for a in session.exec(select(Action).where(Action.status == "pending")).all():
             p = json.loads(a.payload)
-            if "date" in p and "start" in p:
+            if p.get("date") and p.get("start"):
                 start = datetime.combine(date.fromisoformat(p["date"]), datetime.min.time(), self.tz).replace(
                     hour=int(p["start"][:2]), minute=int(p["start"][3:5]))
                 if start <= now:
@@ -315,6 +386,17 @@ class Actions:
         a = session.get(Action, action_id)
         if not a:
             raise ActionError("That action doesn't exist.")
+        return a
+
+    def update_pending(self, session: Session, a: Action, payload: dict) -> Action:
+        """Change a proposal that's still waiting (e.g. you asked for a different time before approving it)."""
+        if a.status != "pending":
+            raise ActionError("That's no longer waiting.")
+        a.payload = json.dumps(payload)
+        a.reason = f"{a.reason} Changed from chat to {payload.get('date')} {payload.get('start') or ''}".strip()
+        session.add(a)
+        session.commit()
+        self.calendar.invalidate()
         return a
 
     def seen(self, session: Session, dedupe_key: str) -> bool:

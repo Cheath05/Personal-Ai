@@ -354,6 +354,13 @@ Then approve the route in the admin console. This matters because an iPhone can 
 
   They either can't be undone or they speak for you.
 
+**Asking in chat (built 27 Sep 2026):**
+
+- When you ask an agent to change something it's responsible for, it uses its tools.
+  - Calendar changes appear as an Action Preview card right in the chat.
+  - Settings, tasks and memories change immediately, and the reply lists them.
+- The reply is told exactly what happened, and a check blocks "I changed it" when nothing changed.
+
 ### 6.1 What agents can do on your devices
 
 **Mac and Windows: Cardinal Link.** A small app you install on each computer. It keeps a secure connection to Cardinal and gives agents a fixed menu of device tools. Every tool that changes something goes through Action Preview.

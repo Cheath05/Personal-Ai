@@ -20,6 +20,7 @@ jobs:
   syllabus:      { policy: local,             lane: interactive, max_tokens: 1500 }   # dates from a syllabus, as JSON
   rollup_now:    { policy: local_then_claude, lane: interactive, tier: deep, effort: high, max_tokens: 2000 }  # "Write it now"
   sigma_patterns: { policy: local,            lane: background,  max_tokens: 600 }    # nightly Core Memory candidates
+  tool_plan:     { policy: local,             lane: interactive, max_tokens: 400 }    # which tools a chat message needs, as JSON
   triage:        { policy: local,             lane: background,  max_tokens: 600 }
   checkin:       { policy: local,             lane: interactive, max_tokens: 800 }
   plan_week:     { policy: local_then_claude, lane: interactive, tier: default, effort: high, max_tokens: 2000 }

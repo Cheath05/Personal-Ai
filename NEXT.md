@@ -139,10 +139,36 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - **UI:** the Training view shows the status window (level = VDOT), this week's sessions, log a run, recent runs, the Apple Watch setup (token, export import) and the 12-week table.
 - **Tested:** 80 tests. The demo covered HAE ingest, manual runs, session matching and the pace check.
 
+## Agents act from chat (built 27 Sep 2026)
+
+- **The problem:** agents only produced text. "I'll change it" changed nothing. The user hit this with Vector: "I can't run before 8:30" left the 06:00 run where it was.
+- **`cardinal/tools.py`** makes each chat message two steps.
+  - **1. Plan.** The `tool_plan` job answers in JSON, constrained by `plan_schema()`.
+    - Tool names are an enum of that agent's tools, and args are known string fields only. A loose schema let the 4B model write junk inside strings.
+    - The prompt includes the next 8 days with dates, one example per tool, and the state with ids (`[item 12]`, `[proposal 9]`, `[task 4]`, `[memory 3]`).
+    - It also includes "the most recent thing" from this conversation, so "that" resolves.
+  - **2. Run the tools in code.**
+    - Calendar changes become Actions (`calendar.add_block`, `calendar.move_item`, `calendar.remove_item`, which always asks), shown as cards in the chat.
+    - Settings (`prefs.py`: run hours, including per weekday; study hours; briefing and check-in times), tasks and memories change right away.
+    - Proposals that are still waiting are edited in place (`update_pending`).
+  - **Then the reply:**
+    - The prompt gets `results_block` (done / proposed, not done yet / didn't happen), or an explicit "nothing was changed".
+    - `claim_check` rejects "I've moved it"-style claims when nothing happened. If the model insists, the reply gets "(To be clear: nothing was changed.)".
+  - **Stored per reply:** `Message.action_ids` and `Message.changes`. The chat shows status lines plus Authorize / Always allow / Deny cards, and they reappear with the history.
+- **Tools by agent:**
+  - Vector: `set_run_hours` (re-fits upcoming runs; evenings still preferred inside the hours), `move_run`, `replan_runs`, `log_run`.
+  - Axiom: calendar add/move/remove, `set_study_hours`, `suggest_study_time`.
+  - Delta: tasks, check-in times.
+  - Ordinal: briefing time, rewrite.
+  - Sigma: remember/forget.
+  - Cardinal: calendar, tasks, memory.
+  - Relay and Radix: none, and they're told so.
+- **Tested:** 89 tests. The real 4B model on the demo handled the user's own Vector message: it set the hours and proposed moving Tuesday's 06:00 intervals to 16:30.
+- **On the hub:** Tuesday's approved run is still at 06:00. Re-send the request to Vector, and it will now propose the move.
+
 ## Next
 
-- **Phase 5: Second Brain (Axiom).** School folder, notes, flashcards, ask-your-notes with citations.
-- **Or Phase 1.6: voice.** Ask the user.
+- **Phase 5: Second Brain (Axiom),** or **Phase 1.6: voice.** Ask the user.
 
 ## Things to keep in mind
 

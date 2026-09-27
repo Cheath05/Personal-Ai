@@ -146,7 +146,9 @@ async def collect_due(session: Session, cal: Calendar, now: datetime) -> list[Du
 
 
 async def plan_study(session: Session, cal: Calendar, actions: Actions, *, now: datetime | None = None,
-                     window: tuple[str, str] = ("08:00", "22:00")) -> dict:
+                     window: tuple[str, str] | None = None) -> dict:
+    from . import prefs
+    window = window or prefs.window(session, "study_window", ("08:00", "22:00"))
     tz = cal.tz
     now = now or datetime.now(tz)
     if not any(cal.google.account(session, s) for s in ("personal", "school")):
@@ -211,7 +213,8 @@ async def plan_study(session: Session, cal: Calendar, actions: Actions, *, now: 
         courses = sorted({i.course for i in plan.items if i.course})
         payload = {"date": slot_day.isoformat(), "start": _hm(slot[0]), "end": _hm(slot[1]), "title": title,
                    "course": courses[0] if len(courses) == 1 else None, "window": list(window),
-                   "notes": f"For: {listed} (due {due_when}). Suggested by Axiom.", "for": names}
+                   "notes": f"For: {listed} (due {due_when}). Suggested by Axiom.", "for": names,
+                   "noun": "study blocks"}
         a = await actions.propose(session, agent_id=AGENT, kind="calendar.add_block", title=title, reason=reason,
                                   payload=payload, dedupe_key=plan.key)
         if a.status == "executed":

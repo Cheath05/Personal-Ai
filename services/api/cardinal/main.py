@@ -13,14 +13,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import briefing, planner, review, running, syllabus, usage
+from . import briefing, planner, prefs, review, running, syllabus, tools, usage
 from .actions import ActionError, Actions
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
 from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
 from .calendar import Calendar, CalendarError
-from .db import CreditTopUp, Experiment, Memory, Message, SyllabusImport, Task, get_engine, get_session, utcnow
-from .router import BrainRouter, NoBrainAvailable
+from .db import Action, CreditTopUp, Experiment, Memory, Message, SyllabusImport, Task, get_engine, get_session, utcnow
+from .router import BrainRouter, NoBrainAvailable, basic_check
 from .sources.blackboard import Blackboard
 from .sources.google import SLOTS, Google, GoogleError
 from .today import Today, context_text
@@ -104,7 +104,17 @@ def messages(agent_id: str, limit: int = 40, session: Session = Depends(get_sess
     rows = session.exec(
         select(Message).where(Message.agent_id == agent_id).order_by(col(Message.id).desc()).limit(limit)
     ).all()
-    return [m.model_dump() for m in reversed(rows)]
+    return [message_json(m, session) for m in reversed(rows)]
+
+
+def message_json(m: Message, session: Session) -> dict:
+    """A chat message, with the current state of any change it proposed (so its card can be shown)."""
+    out = m.model_dump(exclude={"action_ids", "changes"})
+    out["changes"] = json.loads(m.changes) if m.changes else []
+    ids = json.loads(m.action_ids) if m.action_ids else []
+    svc = getattr(app.state, "actions", None)
+    out["actions"] = [svc.to_json(a) for a in (session.get(Action, i) for i in ids) if a] if svc else []
+    return out
 
 
 class ChatIn(BaseModel):
@@ -143,6 +153,20 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
     while turns and turns[0]["role"] != "user":
         turns.pop(0)
 
+    # Step 1-2: if the message asks for a change this agent owns, make it (or propose it) for real.
+    results: list[tools.Result] = []
+    if tools.tools_for(agent.id) and not body.retry_with_claude:
+        recent = []  # changes this conversation made recently, oldest to newest ("that" = the last one)
+        for m in reversed(history):
+            if m.role == "assistant" and m.action_ids:
+                recent += json.loads(m.action_ids)
+        ctx = tools.Ctx(session=session, now=now_local(), calendar=calendar_svc(), actions=actions_svc(),
+                        agent_id=agent.id, router=router,
+                        extras={"agents": app.state.agents, "today": app.state.today, "recent_actions": recent[-6:]})
+        results = await tools.plan_and_run(ctx, agent.name, turns)
+        if results:
+            app.state.today.invalidate()
+
     context = ""
     if agent.access:
         context = context_text(await app.state.today.for_chat(session), set(agent.access))
@@ -154,22 +178,31 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
     try:
         result = await router.run(
             session, agent_id=agent.id, job=agent.job,
-            system=agent.system_prompt(context=context, memory=review.memory_text(session)),
+            system=agent.system_prompt(context=context, memory=review.memory_text(session),
+                                       can_act=bool(tools.tools_for(agent.id)))
+                   + tools.results_block(results, has_tools=bool(tools.tools_for(agent.id)) and not body.retry_with_claude),
             messages=turns, force_claude=body.retry_with_claude,
+            check=tools.claim_check(results) if tools.tools_for(agent.id) and not body.retry_with_claude else basic_check,
         )
     except NoBrainAvailable as e:
         raise HTTPException(503, str(e)) from e
 
     reply = result.reply
+    if result.reason and "claimed a change" in result.reason:
+        reply.text = f"{reply.text}\n\n(To be clear: nothing was changed.)"  # the model insisted; don't let it mislead
+    made = [a for r in results for a in r.all_actions]
     saved = Message(agent_id=agent.id, role="assistant", content=reply.text,
-                    provider=reply.provider, model=reply.model, brain=reply.brain)
+                    provider=reply.provider, model=reply.model, brain=reply.brain,
+                    action_ids=json.dumps([a.id for a in made]) if made else None,
+                    changes=json.dumps([{"status": r.status, "text": r.text} for r in results]) if results else None)
     session.add(saved)
     session.commit()
     session.refresh(saved)
 
     local = router.local.get(reply.brain)
     return {
-        "message": saved.model_dump(),
+        "message": message_json(saved, session),
+        "changes": [{"ok": r.ok, "status": r.status, "text": r.text} for r in results],
         "route": {
             "provider": reply.provider,
             "brain": reply.brain,
@@ -220,7 +253,7 @@ async def today(refresh: bool = False, session: Session = Depends(get_session)):
     return {**snap, "google": t.google.status(session), "google_configured": t.google.configured,
             "blackboard_configured": t.blackboard.configured,
             "briefing": briefing_json(briefing.latest(session, day) or briefing.latest(session)),
-            "briefing_time": get_settings().briefing_time}
+            "briefing_time": prefs.get(session, "briefing_time", get_settings().briefing_time)}
 
 
 @app.post("/api/briefing")

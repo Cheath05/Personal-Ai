@@ -31,7 +31,8 @@ def test_ask_claude_reuses_last_message_and_costs_money(client):
     history = client.get("/api/agents/vector/messages").json()
     assert [m["role"] for m in history] == ["user", "assistant", "assistant"]
     usage = client.get("/api/usage/summary").json()
-    assert usage["month"]["claude_cost"] > 0 and usage["month"]["local_requests"] == 1
+    # 2 local calls: the tool-planning step, then the reply. Claude only answered the retry.
+    assert usage["month"]["claude_cost"] > 0 and usage["month"]["local_requests"] == 2
 
 
 def test_unknown_agent_and_empty_message_are_rejected(client):

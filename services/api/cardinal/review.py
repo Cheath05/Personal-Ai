@@ -102,12 +102,15 @@ def status(session: Session, now: datetime, settings) -> dict:
     m, e = checkin(session, day, "morning"), checkin(session, day, "evening")
     blocks = study_blocks(session, now.date(), tz)
     week = monday(now.date()).isoformat()
+    from . import prefs
+    morning_at = prefs.get(session, "morning_checkin", settings.morning_checkin)
+    evening_at = prefs.get(session, "evening_checkin", settings.evening_checkin)
     return {
         "day": day, "now": now.isoformat(),
-        "morning": {"done": bool(m), "due": not m and _after(now, settings.morning_checkin),
-                    "time": settings.morning_checkin, "checkin": checkin_json(m)},
-        "evening": {"done": bool(e), "due": not e and _after(now, settings.evening_checkin),
-                    "time": settings.evening_checkin, "checkin": checkin_json(e)},
+        "morning": {"done": bool(m), "due": not m and _after(now, morning_at),
+                    "time": morning_at, "checkin": checkin_json(m)},
+        "evening": {"done": bool(e), "due": not e and _after(now, evening_at),
+                    "time": evening_at, "checkin": checkin_json(e)},
         "tasks": [t.model_dump() for t in tasks_for(session, day)],
         "blocks": [{"id": b.id, "title": b.title, "start": b.start.astimezone(tz).isoformat(),
                     "end": b.end.astimezone(tz).isoformat()} for b in blocks],

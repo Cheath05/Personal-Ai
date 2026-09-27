@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from sqlmodel import Session, col, select
 
+from . import prefs
 from .agents import Agent
 from .db import Briefing, get_engine
 from .router import BrainRouter, NoBrainAvailable
@@ -118,7 +119,9 @@ async def run_scheduler(state, settings) -> None:
             log.exception("Sigma's nightly pass failed")
         try:
             now = datetime.now(tz)
-            hh, mm = (int(x) for x in settings.briefing_time.split(":"))
+            with Session(get_engine()) as s0:
+                at = prefs.get(s0, "briefing_time", settings.briefing_time)
+            hh, mm = (int(x) for x in at.split(":"))
             if now.time() >= time(hh, mm) and last_plan_day != local_day(now) and getattr(state, "actions", None):
                 last_plan_day = local_day(now)
                 with Session(get_engine()) as session:
@@ -135,7 +138,8 @@ async def run_scheduler(state, settings) -> None:
             now = datetime.now(tz)
             with Session(get_engine()) as session:
                 last = latest(session)
-                if briefing_due(now, settings.briefing_time, last.day if last else None, last_try):
+                if briefing_due(now, prefs.get(session, "briefing_time", settings.briefing_time),
+                                last.day if last else None, last_try):
                     last_try = now
                     snap = await state.today.snapshot(session, force=True)
                     if connected(snap):

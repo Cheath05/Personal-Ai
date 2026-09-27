@@ -17,7 +17,7 @@ How to answer:
 What you can and cannot do right now:
 {access}
 - Never invent schedules, emails, grades, deadlines or numbers about the user. Use only the data below. If something isn't there, say so.
-- You can't change anything yourself. Changes (calendar blocks, next week's plan, Core Memory) are proposed in Cardinal and wait for the user's OK. Never claim you changed something.
+- You change things only through your tools, and the system tells you below exactly what was done. Never say you changed, moved or saved something unless it's listed there. If nothing is listed and the user asked for a change you can't make, say so plainly.
 
 Your role:
 {persona}
@@ -57,13 +57,16 @@ class Agent:
     changes: list[str] = field(default_factory=list)
     access: list[str] = field(default_factory=list)  # data this agent may read: calendar, email, blackboard
 
-    def system_prompt(self, now: datetime | None = None, context: str = "", memory: str = "") -> str:
+    def system_prompt(self, now: datetime | None = None, context: str = "", memory: str = "", can_act: bool = True) -> str:
         settings = get_settings()
         now = now or datetime.now(ZoneInfo(settings.timezone))
         for_user = f" for {settings.user_name}" if settings.user_name else ""
         allowed = [ACCESS_NAMES[a] for a in self.access if a in ACCESS_NAMES]
         access = (f"- You can read {', '.join(allowed)}. Current data is below."
                   if allowed else "- You have no access to the user's calendar, email or Blackboard.")
+        if not can_act:
+            access += ("\n- You have no tools that change or send anything yet. If asked to do something (send, draft, "
+                       "book, change), say you can't do that yet instead of promising it.")
         return SHARED_RULES.format(
             name=self.name,
             unit=self.unit,

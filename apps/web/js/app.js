@@ -145,7 +145,34 @@ function messageEl(m, route) {
     meta.append(el("span", null, metaText));
     div.append(meta);
   }
+  if (m.role === "assistant") appendChanges(div, m);
   return div;
+}
+
+// What the agent's tools actually did, straight from the server (not the model's wording),
+// plus Authorize/Deny cards for anything waiting for your OK.
+const CHANGE_ICON = { done: "✓", proposed: "⏳", failed: "✗" };
+const ACTION_LINE = { executed: "✓ Authorized", denied: "Denied", undone: "Undone", failed: "✗ Failed", expired: "Expired" };
+function appendChanges(div, m) {
+  const changes = m.changes || [];
+  const actions = m.actions || [];
+  if (!changes.length && !actions.length) return;
+  const box = el("div", "changes");
+  const tidy = (t) => t.replace(/\s*(Waiting for the user's OK \(a card under your reply\)|It's still waiting for the user's OK)\.?/g, "").trim();
+  changes.forEach((c) => box.append(el("p", `change ${c.status}`, `${CHANGE_ICON[c.status] || "•"} ${tidy(c.text)}`)));
+  actions.forEach((a) => {
+    if (a.status === "pending") {
+      const slot = el("div");
+      slot.append(actionsCard(a, (label) => slot.replaceChildren(el("p", "change done", label))));
+      box.append(slot);
+    } else if (ACTION_LINE[a.status]) {
+      box.append(el("p", `change ${a.status === "executed" ? "done" : ""}`, `${ACTION_LINE[a.status]}: ${a.title}`));
+    }
+  });
+  div.append(box);
+}
+function actionsCard(a, onDone) {
+  return actions ? actions.card(a, { inChat: true, onDone }) : el("p", "change proposed", `⏳ ${a.title}`);
 }
 
 function systemEl(text) {
@@ -202,6 +229,8 @@ async function send(text, { askClaude = false } = {}) {
     const div = messageEl({ role: "assistant", content: "" }, res.route);
     box.append(div);
     await typeOut(div.querySelector("p"), res.message.content);
+    appendChanges(div, res.message);
+    if (res.message.actions?.length) { actions?.refresh(); calendar?.refresh(); }
     if (res.route.provider === "local" && res.claude_available) {
       const btn = el("button", "linkish ask-claude", "Ask Claude instead");
       btn.type = "button";

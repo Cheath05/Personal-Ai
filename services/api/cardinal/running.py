@@ -509,6 +509,27 @@ RUN_PREFERRED = ("16:30", "20:30")
 RUN_WINDOW = ("06:00", "21:00")
 
 
+DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def run_windows(session: Session, d: date | None = None) -> tuple[tuple[str, str], tuple[str, str]]:
+    """(preferred, allowed) for a day. Hours you told Vector for that weekday win, then your general hours."""
+    from . import prefs
+    keys = ([f"run_window_{DAY_KEYS[d.weekday()]}"] if d else []) + ["run_window"]
+    for key in keys:
+        if prefs.get(session, key):
+            mine = prefs.window(session, key, RUN_WINDOW)
+            # Still prefer late afternoon/evening inside your hours; your hours are the hard limit.
+            lo, hi = max(mine[0], RUN_PREFERRED[0]), min(mine[1], RUN_PREFERRED[1])
+            return ((lo, hi) if lo < hi else mine), mine
+    return RUN_PREFERRED, RUN_WINDOW
+
+
+def run_length(s: dict, f: dict) -> int:
+    """Minutes for a session: the running plus warm-up and cool-down, rounded to 15."""
+    return int(round((s["miles"] * f["zones"]["easy"][1] + 15) / 15) * 15)
+
+
 async def propose_runs(session: Session, cal, actions, now: datetime, days: int = 7) -> dict:
     """Vector proposes the next week's planned runs as calendar blocks, at a free time on the planned day."""
     from .actions import minutes as to_min
@@ -524,7 +545,8 @@ async def propose_runs(session: Session, cal, actions, now: datetime, days: int 
         if actions.seen(session, key):
             continue
         d = date.fromisoformat(s["date"])
-        length = int(round((s["miles"] * f["zones"]["easy"][1] + 15) / 15) * 15)  # run + warm-up/cool-down, to 15 min
+        preferred, allowed = run_windows(session, d)
+        length = run_length(s, f)
         try:
             view = await cal.day(session, d)
         except CalendarError:
@@ -535,17 +557,17 @@ async def propose_runs(session: Session, cal, actions, now: datetime, days: int 
                 continue
             st, en = datetime.fromisoformat(e["start"]).astimezone(now.tzinfo), datetime.fromisoformat(e["end"]).astimezone(now.tzinfo)
             busy.append((st.hour * 60 + st.minute if st.date() == d else 0, en.hour * 60 + en.minute if en.date() == d else 1440))
-        lo = to_min(RUN_WINDOW[0])
+        lo = to_min(allowed[0])
         if d == today:
             lo = max(lo, now.hour * 60 + now.minute + 30)
-        slot = free_slot(busy, length, lo, to_min(RUN_WINDOW[1]), (to_min(RUN_PREFERRED[0]), to_min(RUN_PREFERRED[1])))
+        slot = free_slot(busy, length, lo, to_min(allowed[1]), (to_min(preferred[0]), to_min(preferred[1])))
         if not slot:
             skipped.append(f"{s['day']} {s['title']}")
             continue
         hm = lambda m: f"{m // 60:02d}:{m % 60:02d}"  # noqa: E731
         payload = {"date": s["date"], "start": hm(slot[0]), "end": hm(slot[1]), "title": f"Run: {s['title']}",
                    "notes": f"{s['detail']}. Target: {s['target']}. Week {s['week']} of 12. Suggested by Vector.",
-                   "window": list(RUN_WINDOW), "item_kind": "event", "noun": "runs"}
+                   "window": list(allowed), "item_kind": "event", "noun": "runs"}
         a = await actions.propose(session, agent_id="vector", kind="calendar.add_block", title=f"Run: {s['title']}",
                                   reason=f"Week {s['week']}, {s['day']}: {s['detail']}. You're free {hm(slot[0])}–{hm(slot[1])}.",
                                   payload=payload, dedupe_key=key)

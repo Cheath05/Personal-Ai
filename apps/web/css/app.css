@@ -233,6 +233,18 @@ a.btn { text-decoration: none; }
 #rules-list li > div { min-width: 0; margin-right: auto; }
 #rules-list .sub + .sub { margin-top: 2px; }
 
+/* ---------- Changes made from chat ---------- */
+.msg .changes { display: grid; gap: 6px; margin-top: 8px; }
+.msg .change { margin: 0; font: 12.5px/1.45 var(--f-mono); color: var(--dim); padding: 6px 9px; border-radius: 6px;
+  background: rgba(255,255,255,.04); border-left: 2px solid var(--line); }
+.msg .change.done { border-left-color: var(--ok); color: var(--text); }
+.msg .change.proposed { border-left-color: var(--warn); }
+.msg .change.failed { border-left-color: var(--bad); }
+.act-card.in-chat { padding: 10px 12px; gap: 6px; }
+.act-card.in-chat h4 { font-size: 14.5px; }
+.act-card.in-chat .act-diff { font-size: 12.5px; }
+.act-card.in-chat .btn { padding: 8px 10px; font-size: 11px; }
+
 /* ---------- Review (Delta, Sigma) ---------- */
 .ok-chip.checkin { background: #9dff4a; color: #0b1a00; box-shadow: 0 0 16px -4px #9dff4a; }
 .rv-form { display: grid; gap: 10px; }

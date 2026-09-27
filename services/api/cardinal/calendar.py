@@ -190,6 +190,26 @@ class Calendar:
         self.invalidate()
         return item, warning
 
+    async def move(self, session: Session, item_id: int, day: date, start: str | None, end: str | None) -> tuple[CalendarItem, str | None]:
+        """Change an item's day and time (and its Google copy)."""
+        item = session.get(CalendarItem, item_id)
+        if not item:
+            raise CalendarError("That item isn't on your calendar any more.")
+        if start and not end and not item.all_day:
+            end_min = parse_hhmm(start)[0] * 60 + parse_hhmm(start)[1] + int((item.end - item.start).total_seconds() // 60)
+            end = f"{min(end_min, 1439) // 60:02d}:{min(end_min, 1439) % 60:02d}"  # keep the same length
+        try:
+            item.start, item.end, item.all_day = make_times(day, start, end, self.tz)
+        except ValueError as e:
+            raise CalendarError("Times should look like 14:30.") from e
+        session.add(item)
+        session.commit()
+        warning = await self._mirror(session, item) if item.google_event_id or self.google.can_write(
+            self.google.account(session, "personal")) else None
+        session.refresh(item)
+        self.invalidate()
+        return item, warning
+
     async def delete(self, session: Session, item_id: int) -> None:
         item = session.get(CalendarItem, item_id)
         if not item:
