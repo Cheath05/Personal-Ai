@@ -248,7 +248,7 @@ Tailscale only makes outbound connections, so OPNsense needs no port forwards or
   ```
 
   Only your own devices have addresses in that range.
-- The Mac brain is left out of the hub. Its Ollama only listens on the Mac itself, and the Mac is often on campus Wi-Fi. The server now runs the same model (~10 tok/s with CPU type `host`), so it adds little.
+- The Mac brain: its Ollama stays on localhost because the Mac is often on campus Wi-Fi. `tailscale serve --bg --tcp 11434 tcp://localhost:11434` shares it with your own devices only. The hub uses the Mac's Tailscale IP (`100.113.113.70`), because Ollama answers 403 to requests addressed by any other hostname.
 
 **5. On the iPhone:** open the `https://cardinal…ts.net` address in Safari, then Share → **Add to Home Screen**.
 

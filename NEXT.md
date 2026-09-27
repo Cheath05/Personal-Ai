@@ -1,4 +1,4 @@
-# Next session: Mac (add the Mac brain)
+# Next session: Phase 2 (Life Dashboard)
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -16,7 +16,7 @@ Start here when picking the project up on another machine. PLAN.md has the full 
     - **Anything pushed to `cardinal-foundation` goes live within 5 minutes**, so run the tests before pushing.
 - **Brains:** the hub's `brains.yaml` now lists `g14` → `mac` → `server`. The `mac` entry was added on 27 Sep; the old file is `brains.yaml.bak-2026-09-27`.
   - **G14:** Tailscale name `alex-windows`, `qwen3:8b` on the GPU at ~40–45 tok/s. Online.
-  - **Mac:** `m3-air`, `qwen3:4b-instruct` at ~29 tok/s. Listed on the hub (it has restarted), Offline until `tailscale serve` is set up on the Mac.
+  - **Mac:** `m3-air` (`100.113.113.70`), `qwen3:4b-instruct` at ~29 tok/s. Online through `tailscale serve`.
   - **Server:** `qwen3:4b-instruct` on the CPU at ~10 tok/s. Kept loaded.
   - **iPhone:** not a brain, and it can't be one. iOS can't run Ollama or serve a model to other devices. It's a client that shows up as a device tag on messages, and in Phase 1.6 it runs voice (Whisper and Kokoro in Safari), not thinking.
 - **Tailscale devices:** `cardinal`, `alex-windows`, `m3-air`, `iphone-17-pro-max`.
@@ -33,21 +33,33 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - **Still to check:** after the G14's next real reboot, run `curl.exe https://cardinal.tailaf3b0c.ts.net/api/brains` and look for `g14` `online: true`. It hadn't been rebooted during the session.
 - **Edge app install:** opened for the user. Edge → ⋯ → Apps → Install this site as an app.
 
-## Steps for the Mac session
+## Done in the Mac session (27 Sep 2026)
 
-1. `git pull` on branch `cardinal-foundation`.
-2. **Let the hub reach the Mac's Ollama over Tailscale only.** Keep Ollama on localhost; it has no password and the Mac is often on eduroam, so don't set `OLLAMA_HOST=0.0.0.0` there. Instead:
-   ```bash
-   tailscale serve --bg --tcp 11434 tcp://localhost:11434
-   # CLI path if `tailscale` isn't on PATH: /Applications/Tailscale.app/Contents/MacOS/Tailscale
-   ```
-   Then from the Mac or G14: `curl http://m3-air:11434/api/version`.
-3. Check `curl https://cardinal.tailaf3b0c.ts.net/api/brains` shows `mac` `online: true`, and that the Access view lists three brains.
-4. Push, and update this file.
+- `tailscale serve --bg --tcp 11434 tcp://localhost:11434` on the Mac. Ollama stays on `127.0.0.1`; the tailnet reaches it at `100.113.113.70:11434`. The setting persists across restarts.
+- **Gotcha:** Ollama answers **403** to any `Host` header that isn't localhost or an IP (DNS-rebinding protection). So the hub's `brains.yaml` uses the Mac's Tailscale IP, not `m3-air`. The G14 doesn't hit this, because it listens on `0.0.0.0`.
+- The hub shows all three brains **online**: g14, mac and server. `setup-hub.sh`'s template matches.
+
+## Next: Phase 2 (Life Dashboard)
+
+Phase 1.6 (Voice) can wait: it needs a VRAM plan first. Phase 2 needs these from the user before any code can talk to Google:
+
+1. **Google Cloud project** (free) on the personal Gmail, with the Gmail and Calendar APIs enabled and an OAuth client of type "Web application".
+   - Redirect URI: `https://cardinal.tailaf3b0c.ts.net/api/google/callback`.
+   - Set the consent screen to **In production**. Apps left in "Testing" get refresh tokens that expire every 7 days.
+2. **Blackboard:** Calendar → settings → *Get external calendar link* (an iCal URL).
+3. **UMBC:** try signing in with the UMBC account. If it shows "Access blocked", use the fallbacks in PLAN §4 (forward UMBC mail, share the UMBC calendar).
+
+What gets built:
+- Google OAuth, with tokens stored on the hub only.
+- Calendar and Gmail readers.
+- The Blackboard iCal feed.
+- A scheduler for the 6:00 briefing.
+- Ordinal's briefing on the Today view.
+- The Action Preview queue, trust rules and the Activity Log.
 
 ## Things to keep in mind
 
 - **One memory.** Real use goes through the hub URL. `scripts/dev.ps1` and `scripts/dev.sh` start a separate, empty local copy for development only.
-- **The G14 doesn't need to stay on.** When it's off, the hub uses the Mac (once added), then the server, then Claude within the $20 cap if a key is ever added.
+- **The G14 doesn't need to stay on.** When it's off, the hub uses the Mac, then the server, then Claude within the $20 cap if a key is ever added.
 - **Voice (Phase 1.6) is next after this.** `qwen3:8b` already uses ~7.2 of the G14's 8 GB of VRAM, so GPU voice needs a plan: a smaller model while talking, or voice on the Mac and iPhone. Discuss it with the user before building.
 - Never commit `.env` or API keys. Don't touch OPNsense or WireGuard. Every agent action must be previewed and approved.
