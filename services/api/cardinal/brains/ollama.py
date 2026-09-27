@@ -1,5 +1,6 @@
 """Local brain: an Ollama server on the G14, the Mac, or the Proxmox VM."""
 
+import asyncio
 import re
 import time
 
@@ -8,6 +9,14 @@ import httpx
 from .base import BrainError, BrainReply
 
 THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def strip_thinking(text: str) -> str:
+    """Drop a model's reasoning, keeping only the answer. Some models omit the opening <think> tag."""
+    text = THINK_BLOCK.sub("", text)
+    if "</think>" in text:
+        text = text.rsplit("</think>", 1)[1]
+    return text.strip()
 
 
 class OllamaBrain:
@@ -22,11 +31,20 @@ class OllamaBrain:
         self._client = client or httpx.AsyncClient(timeout=timeout)
         self._checked_at = 0.0
         self._online = False
+        self._refreshing: asyncio.Task | None = None
 
     async def available(self) -> bool:
-        """True when the server answers and has this brain's model pulled. Cached for 15 s."""
-        if time.monotonic() - self._checked_at < 15:
-            return self._online
+        """True when the server answers and has this brain's model pulled.
+
+        The first check waits; after that the cached answer comes back immediately and a stale one is
+        refreshed in the background, so an offline G14 never slows down a chat."""
+        if self._checked_at == 0.0:
+            return await self._refresh()
+        if time.monotonic() - self._checked_at > 15 and (self._refreshing is None or self._refreshing.done()):
+            self._refreshing = asyncio.create_task(self._refresh())
+        return self._online
+
+    async def _refresh(self) -> bool:
         try:
             r = await self._client.get(f"{self.url}/api/tags", timeout=1.5)
             r.raise_for_status()
@@ -59,7 +77,7 @@ class OllamaBrain:
         except (httpx.HTTPError, ValueError) as e:
             self.mark_offline()
             raise BrainError(f"{self.label} did not answer: {e}") from e
-        text = THINK_BLOCK.sub("", data.get("message", {}).get("content", "")).strip()
+        text = strip_thinking(data.get("message", {}).get("content", ""))
         return BrainReply(
             text=text,
             provider=self.provider,

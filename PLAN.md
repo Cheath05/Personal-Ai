@@ -157,7 +157,53 @@ A model's weights don't change on their own as you use it. Cardinal gets better 
 | **Trust rules** | Which actions you're happy to let run automatically | Phase 2 |
 | **Fine-tuning (optional)** | A small model trained on *your own* data (notes, writing, check-ins) on the G14, a few times a semester | After Phase 6 |
 
-## 3. Server (last phase)
+### 2.5 One hub, one memory
+
+**All your devices share one brain's worth of knowledge.** Cardinal has one **hub**: the machine running the Cardinal API and its database. It holds every conversation, habit, pattern, trust rule and usage record.
+
+- **The iPhone, the Mac and the G14** are windows into the hub. They keep nothing of their own, so a habit learned from your phone is known everywhere the moment it's saved.
+- **The brains** (Ollama on the G14, Mac and server, plus Claude) are workers the hub calls. They also keep nothing between requests.
+- **Device tags:** each message records which device it came from. That's for context ("replies from the iPhone are short"), not separate memories.
+
+```
+ iPhone ──┐                       ┌── G14 brain (fast, when awake)
+ Mac ─────┼──▶  HUB (API + DB) ──┼── Mac brain (when awake)
+ G14 ─────┘   one shared memory   ├── Server brain (always on, slow)
+                                  └── Claude (capped backup)
+```
+
+**Where the hub lives:**
+
+- **Now:** on the Mac, for testing.
+- **Next (Phase 1.5):** on the Proxmox VM, where it's always on. Moving it is a file copy: `data/cardinal.db` goes to the server.
+
+### 2.6 Is the Proxmox server still worth it? Yes, as the hub
+
+The server's job changed. It's no longer the main brain, since its CPU is too slow for chat. It's the part that must never sleep:
+
+| Job | Why a laptop can't do it |
+|---|---|
+| Hosting the hub and the shared memory | A closed MacBook would cut off the iPhone and the G14 |
+| Scheduled jobs: 6:00 briefing, 7:00 and 21:30 check-ins, 2:00 memory pass | They'd silently not run while the laptop sleeps |
+| Receiving Apple Watch data every hour | Health Auto Export needs something awake to send to |
+| Background brain (Qwen3 4B on CPU) | Email sorting and overnight summaries, so the laptops stay free |
+| Reachable from anywhere through Tailscale, with HTTPS | Needed to install the app on the iPhone and use the microphone |
+| Backups of the memory database | Your history shouldn't live only on a laptop |
+
+**Without the server:**
+
+- The Mac could stay the hub. It would have to be open and awake for anything to work, and nothing would run overnight.
+- The server costs nothing extra, since you already run it. Keep it.
+
+### 2.7 How the iPhone uses it
+
+- **It runs the app, not the AI.** The iPhone opens Cardinal from the hub like an app, from its home-screen icon. Your question goes to the hub, which picks a brain (the G14 if it's awake, otherwise the Mac, the server, or Claude within budget) and sends the answer back.
+- **Nothing to install from the App Store.** In Safari, open the hub's address, then Share → **Add to Home Screen**. It gets its own icon, runs full screen, and can send notifications.
+- **Before the hub moves to Proxmox:** run `./scripts/dev.sh --lan` on the Mac and open `http://<mac-ip>:8000` in Safari on the same Wi-Fi. Chat works. Installing, notifications and the microphone need the HTTPS address that Tailscale provides in Phase 1.5.
+- **Voice (Phase 3):** the iPhone 17 Pro Max does the listening and speaking itself, using Whisper and Kokoro in Safari on its GPU. The thinking still happens on a brain.
+- **Apple Watch data** flows iPhone → hub through Health Auto Export.
+
+## 3. Server (Phase 1.5)
 
 Nothing changes on OPNsense or WireGuard. The only work on the server is on the Ubuntu VM.
 
@@ -435,13 +481,15 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | Phase | Where | Deliverable |
 |---|---|---|
 | 0. Foundation ✅ | Mac | Repo, FastAPI + SQLite, web app (no build step), Nexus canvas, brain router with budget guard, usage tracking and readout, chat with every agent |
-| 1. Brain + Voice | Mac + G14 | Ollama + Qwen3 on the G14 and Mac, the brain router, Pipecat voice (Whisper, Kokoro, Chatterbox-Turbo), talking to Cardinal |
+| 1. Local brains | Mac ✅ + G14 | Ollama on the Mac (Qwen3 4B instruct) ✅ and the G14 (Qwen3 8B, next session) |
+| **1.5. Hub on Proxmox** | Server | Move the hub and database to the Ubuntu VM, Tailscale HTTPS, install on the iPhone, background brain on the server CPU, nightly backups. Moved up from Phase 7 so all devices share one memory early. |
+| 1.6. Voice | Mac + G14 + iPhone | Pipecat voice (Whisper, Kokoro, Chatterbox-Turbo), talking to agents out loud |
 | 2. Life Dashboard | Mac | Google Calendar, personal Gmail + UMBC, Blackboard feed, Ordinal's briefing, Action Preview queue + **trust rules** |
 | 3. Executive Assistant | Mac | Delta check-ins and weekly rollup, Core Memory v1 |
 | 4. Running | Mac + iPhone | Health Auto Export, Vector, pace zones, run plan |
 | 5. Second Brain | Mac | Axiom ingestion, notes, flashcards, exam mode |
 | 6. Full Workforce | Mac | Relay drafts, Sigma patterns, Radix, ActivityWatch |
-| 7. **Deploy** | Server | Resize the Ubuntu VM, Docker, **Tailscale** (§3), backups, push notifications, install on all devices |
+| 7. Hardening | Server | Push notifications, login with a passkey, Postgres if SQLite ever gets slow, restore drills |
 
 ## 11. Repo layout
 
@@ -452,7 +500,7 @@ services/api/        FastAPI app (Python, uv): agents, brain router, usage, late
   config/            agents.yaml, routing.yaml, brains.example.yaml (brains.yaml is git-ignored)
 services/voice/      Pipecat pipeline and speech engine adapters (Phase 1)
 scripts/dev.sh       Run it locally
-infra/               Server deploy: Docker Compose, Tailscale notes, backups (Phase 7)
+infra/               Server deploy: systemd or Docker, Tailscale notes, backups (Phase 1.5)
 design/              Concept page; reference screenshots are local-only
 data/                Local SQLite database (git-ignored); Postgres on the server
 ```

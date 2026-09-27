@@ -48,3 +48,10 @@ async def test_chat_error_raises_brain_error_and_marks_offline():
     with pytest.raises(BrainError):
         await brain.chat("sys", [{"role": "user", "content": "hi"}], max_tokens=10)
     assert not await brain.available()  # cached as offline right after the failure
+
+
+def test_strip_thinking_handles_missing_open_tag():
+    from cardinal.brains.ollama import strip_thinking
+    assert strip_thinking("Okay, the user asks...\n</think>\n\nEasy runs build your base.") == "Easy runs build your base."
+    assert strip_thinking("<think>hmm</think>Answer.") == "Answer."
+    assert strip_thinking("Just an answer.") == "Just an answer."

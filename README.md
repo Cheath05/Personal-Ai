@@ -20,16 +20,25 @@ cp .env.example .env        # set your name; leave ANTHROPIC_API_KEY empty to st
 ./scripts/dev.sh            # http://localhost:8000
 ```
 
-To open it on your phone on the same Wi-Fi, run `./scripts/dev.sh --lan` and visit `http://<mac-ip>:8000`. There's no login yet, so only do this on your home network.
+**iPhone, for now:**
+
+1. Run `./scripts/dev.sh --lan` on the Mac.
+2. In Safari on the same Wi-Fi, open `http://<mac-ip>:8000`. Find the Mac's IP with `ipconfig getifaddr en0`.
+
+There's no login yet, so only do this on your home network. Installing to the home screen needs HTTPS, which comes when the hub moves to the Proxmox server (PLAN.md §2.5–2.7).
+
+**One memory for every device:** conversations, habits and usage live in the hub's database (`data/cardinal.db`). Devices only display it, so whatever you teach Cardinal from one device is known on all of them.
 
 ## Give it a brain (Ollama)
 
 **On this Mac (8 GB):**
 
+Already set up. Ollama runs in the background and starts at login.
+
 ```bash
 brew install ollama
 brew services start ollama
-ollama pull qwen3:4b        # about 2.5 GB
+ollama pull qwen3:4b-instruct   # about 2.5 GB; answers directly (the plain qwen3:4b tag "thinks" for ~25 s first)
 ```
 
 **On the ROG G14 (Windows 11, RTX 4060):**

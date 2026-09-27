@@ -1,8 +1,20 @@
 // Thin wrapper around the Cardinal API.
 
+// Which device you're on. Everything is stored on the hub, so all devices share one memory;
+// this only labels where a message came from.
+export const DEVICE = (() => {
+  const ua = navigator.userAgent;
+  if (/iPhone/.test(ua)) return "iPhone";
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "iPad";
+  if (/Windows/.test(ua)) return "Windows PC";
+  if (/Macintosh/.test(ua)) return "Mac";
+  if (/Android/.test(ua)) return "Android";
+  return "Browser";
+})();
+
 async function request(path, options = {}) {
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Cardinal-Device": DEVICE },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });

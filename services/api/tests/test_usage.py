@@ -61,3 +61,19 @@ def test_all_local_tip(session, settings):
     add(session, NOW - timedelta(hours=1), "cardinal", "local")
     tips = usage.summary(session, settings, NAMES, now=NOW)["tips"]
     assert "Everything has run locally this month. Claude spend is $0." in tips
+
+
+def test_old_database_gets_new_columns_without_losing_rows(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+
+    from cardinal.db import add_missing_columns
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as conn:  # a database from before the "device" column existed
+        conn.execute(text("CREATE TABLE message (id INTEGER PRIMARY KEY, ts DATETIME, agent_id VARCHAR NOT NULL, "
+                          "role VARCHAR NOT NULL, content VARCHAR NOT NULL, provider VARCHAR, model VARCHAR, brain VARCHAR)"))
+        conn.execute(text("INSERT INTO message (agent_id, role, content) VALUES ('vector', 'user', 'keep me')"))
+    assert "message.device" in add_missing_columns(engine)
+    assert "device" in {c["name"] for c in inspect(engine).get_columns("message")}
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT content FROM message")).scalar() == "keep me"

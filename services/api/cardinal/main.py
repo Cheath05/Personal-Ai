@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
@@ -87,7 +87,8 @@ class ChatIn(BaseModel):
 
 
 @app.post("/api/chat")
-async def chat(body: ChatIn, session: Session = Depends(get_session)):
+async def chat(body: ChatIn, session: Session = Depends(get_session),
+               x_cardinal_device: str | None = Header(default=None)):
     agent = get_agent(body.agent_id)
     settings = get_settings()
     router: BrainRouter = app.state.router
@@ -103,7 +104,8 @@ async def chat(body: ChatIn, session: Session = Depends(get_session)):
         text = (body.message or "").strip()
         if not text:
             raise HTTPException(400, "Message is empty.")
-        session.add(Message(agent_id=agent.id, role="user", content=text))
+        device = (x_cardinal_device or "").strip()[:40] or None
+        session.add(Message(agent_id=agent.id, role="user", content=text, device=device))
         session.commit()
 
     history = session.exec(

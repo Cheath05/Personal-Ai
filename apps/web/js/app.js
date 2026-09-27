@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, DEVICE } from "./api.js";
 import { createNexus } from "./nexus.js";
 
 const $ = (id) => document.getElementById(id);
@@ -113,7 +113,7 @@ async function select(i) {
 function messageEl(m, route) {
   const a = state.agents[state.sel];
   const div = el("div", m.role === "user" ? "msg" : "msg ai");
-  div.append(el("span", "who", m.role === "user" ? "You" : a.name));
+  div.append(el("span", "who", m.role === "user" ? (m.device ? `You · ${m.device}` : "You") : a.name));
   const p = el("p", null, m.content);
   div.append(p);
   const metaText = route ? routeLabel(route) : m.role === "assistant" && m.model ? m.model : "";
@@ -167,7 +167,7 @@ async function send(text, { askClaude = false } = {}) {
   const box = $("transcript");
   box.querySelector(".empty")?.remove();
   box.querySelectorAll(".ask-claude").forEach((b) => b.remove());
-  if (!askClaude) box.append(messageEl({ role: "user", content: text }));
+  if (!askClaude) box.append(messageEl({ role: "user", content: text, device: DEVICE }));
   box.scrollTop = box.scrollHeight;
   state.busy = true;
   $("send").disabled = true;

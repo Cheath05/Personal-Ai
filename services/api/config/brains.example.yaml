@@ -5,15 +5,15 @@
 local:
   g14:
     url: "http://g14.local:11434"        # ROG G14 on your home network (or its Tailscale name)
-    model: "qwen3:8b"
+    model: "qwen3:8b"                     # hybrid model; Cardinal turns its thinking mode off
     label: "ROG G14 · RTX 4060"
   mac:
-    url: "http://localhost:11434"         # This M3 MacBook Air (8 GB: use the 4B model)
-    model: "qwen3:4b"
+    url: "http://localhost:11434"         # This M3 MacBook Air (8 GB: the 4B instruct model answers directly)
+    model: "qwen3:4b-instruct"
     label: "M3 MacBook Air"
   server:
-    url: "http://cardinal:11434"          # Proxmox VM, once deployed (Phase 7)
-    model: "qwen3:4b"
+    url: "http://cardinal:11434"          # Proxmox VM, once the hub moves there
+    model: "qwen3:4b-instruct"
     label: "Proxmox server"
 
 order:
