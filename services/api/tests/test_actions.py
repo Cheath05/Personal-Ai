@@ -39,6 +39,7 @@ def test_free_slot():
 def test_grouping_titles_and_duplicates():
     assert planner.clean_title("6. Submit: Biology Module Full Project") == "Biology Module Full Project"
     assert planner.classify("Midterm Exam 1") == "exam" and planner.classify("6. Complete: Chemistry Quiz") == "quiz"
+    assert planner.classify("Ethical Analysis 2 Final Paper") == "work" and planner.classify("Final") == "exam"
     wed = datetime(2026, 9, 30, 23, 59, tzinfo=NY)
     items = [planner.Due(t, wed, planner.classify(t)) for t in ("Homework 2:2", "Homework 2:3", "Unit 2a dialogue", "Chemistry Quiz")]
     plans = planner.make_plans(items)

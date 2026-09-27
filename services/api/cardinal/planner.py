@@ -56,8 +56,9 @@ def classify(title: str, kind: str | None = None) -> str:
     if kind in ("exam", "quiz"):
         return kind
     low = title.lower()
-    if re.search(r"\b(exam|midterm|final)\b", low):
-        return "exam"
+    written = re.search(r"\b(paper|project|essay|report|draft|presentation|portfolio|submission|reflection|lab)\b", low)
+    if re.search(r"\b(exam|midterm)\b", low) or (re.search(r"\bfinal\b", low) and not written):
+        return "exam"  # "Final exam" or "Final" alone; a "Final Paper" is work to do, not a test
     if re.search(r"\bquiz", low):
         return "quiz"
     return "work"
