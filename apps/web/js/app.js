@@ -278,7 +278,7 @@ $("composer").addEventListener("submit", (e) => {
   send(text);
 });
 
-// Clear is a two-tap button: the first tap arms it ("Confirm clear"), the second clears.
+// Clear is a two-tap button: the first tap arms it ("Confirm"), the second clears.
 // It disarms after 4 s or when you tap anywhere else, so a stray click never wipes a chat.
 const clearBtn = $("c-clear");
 let clearTimer = null;
@@ -294,7 +294,7 @@ clearBtn.addEventListener("click", async (e) => {
   if (!a || state.busy) return;
   if (!clearBtn.classList.contains("armed")) {
     clearBtn.classList.add("armed");
-    clearBtn.textContent = "Confirm clear";
+    clearBtn.textContent = "Confirm";
     clearBtn.title = `Tap again to clear your conversation with ${a.name}. Check-ins, calendar and Core Memory stay.`;
     clearTimer = setTimeout(disarmClear, 4000);
     return;

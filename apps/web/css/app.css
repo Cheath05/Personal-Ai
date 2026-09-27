@@ -498,11 +498,9 @@ details[open] summary::after { content: "–"; }
 .composer .btn { height: 43px; }
 .ph-r { display: inline-flex; align-items: center; gap: 12px; }
 #c-clear:disabled { opacity: .4; cursor: default; }
-#c-clear.armed {
-  color: #fff; background: var(--bad); text-decoration: none; padding: 4px 9px; border-radius: 5px;
-  box-shadow: 0 0 14px -3px var(--bad); animation: armed 1s ease-in-out infinite;
-}
-@keyframes armed { 50% { box-shadow: 0 0 4px -2px var(--bad); } }
+#c-clear { width: 8ch; text-align: right; }  /* same box for "Clear" and "Confirm": nothing shifts */
+#c-clear.armed { color: var(--bad); text-decoration-color: var(--bad); animation: armed 1s ease-in-out infinite; }
+@keyframes armed { 50% { text-shadow: 0 0 8px var(--bad); } }
 :root[data-motion="reduced"] #c-clear.armed { animation: none; }
 
 @media (min-width: 1100px) {
