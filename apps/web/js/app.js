@@ -278,16 +278,34 @@ $("composer").addEventListener("submit", (e) => {
   send(text);
 });
 
-$("c-clear").addEventListener("click", async () => {
+// Clear is a two-tap button: the first tap arms it ("Confirm clear"), the second clears.
+// It disarms after 4 s or when you tap anywhere else, so a stray click never wipes a chat.
+const clearBtn = $("c-clear");
+let clearTimer = null;
+function disarmClear() {
+  clearTimeout(clearTimer);
+  clearBtn.classList.remove("armed");
+  clearBtn.textContent = "Clear";
+  clearBtn.title = "Clear this conversation";
+}
+clearBtn.addEventListener("click", async (e) => {
+  e.stopPropagation();
   const a = state.agents[state.sel];
   if (!a || state.busy) return;
-  if (!confirm(`Clear your conversation with ${a.name}? Check-ins, your calendar, Core Memory and anything waiting for your OK aren't affected.`)) return;
+  if (!clearBtn.classList.contains("armed")) {
+    clearBtn.classList.add("armed");
+    clearBtn.textContent = "Confirm clear";
+    clearBtn.title = `Tap again to clear your conversation with ${a.name}. Check-ins, calendar and Core Memory stay.`;
+    clearTimer = setTimeout(disarmClear, 4000);
+    return;
+  }
+  disarmClear();
   try {
     await api.clearChat(a.id);
     $("transcript").replaceChildren(el("p", "empty", `Cleared. Say hello to ${a.name}.`));
-    toast(`Conversation with ${a.name} cleared.`);
   } catch (err) { toast(err.message); }
 });
+document.addEventListener("click", (e) => { if (e.target !== clearBtn) disarmClear(); });
 
 /* ---------- Usage (low-key chip + popover) ---------- */
 function usageBody(u, { withCredit = true } = {}) {
