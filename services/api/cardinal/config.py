@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     brains_file: Path | None = None
     history_turns: int = 12
 
+    # Where people open Cardinal. Google sends you back here after sign-in.
+    public_url: str = "http://localhost:8000"
+
+    # Google sign-in (Calendar + Gmail). From your Google Cloud project's OAuth client.
+    google_client_id: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_SECRET")
+
+    # Blackboard: Calendar → settings → "Get external calendar link". Treat it like a password.
+    blackboard_ics_url: str | None = None
+
+    # Ordinal's morning briefing (local time, HH:MM). The scheduler can be turned off for tests.
+    briefing_time: str = "06:00"
+    scheduler: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,3 +1,7 @@
+import os
+
+os.environ.setdefault("CARDINAL_SCHEDULER", "false")  # no background briefing loop during tests
+
 import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, create_engine

@@ -177,6 +177,20 @@ p { margin: 0; }
 .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .soon { max-width: 760px; }
 .soon p { max-width: 64ch; }
+a.btn { text-decoration: none; }
+.span-all { grid-column: 1 / -1; }
+
+/* ---------- Today ---------- */
+.brief { font-size: 16.5px; line-height: 1.65; max-width: 78ch; white-space: pre-line; }
+.row-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+.list.agenda li { justify-content: flex-start; align-items: baseline; }
+.agenda .when { flex: 0 0 118px; font: 12px/1.5 var(--f-mono); color: var(--acc-hi); }
+.agenda .what { min-width: 0; }
+.agenda .what b { font-weight: 500; overflow-wrap: anywhere; }
+.agenda li.day { font: 600 10.5px/1.6 var(--f-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--faint); padding-block: 12px 4px; }
+.agenda li.soon .when { color: var(--warn); }
+.list li.empty-row { color: var(--faint); font-size: 14px; }
+#conn-list li > div { min-width: 0; margin-right: auto; }
 
 /* ---------- Nexus ---------- */
 .nexus { position: relative; }

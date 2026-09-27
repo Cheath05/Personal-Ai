@@ -16,6 +16,7 @@ jobs:
   chat:          { policy: local_then_claude, lane: interactive, tier: default, effort: medium, max_tokens: 900 }
   quick:         { policy: local,             lane: interactive, max_tokens: 400 }
   briefing:      { policy: local,             lane: background,  max_tokens: 1200 }
+  briefing_now:  { policy: local,             lane: interactive, max_tokens: 1200 }   # "Write it now" on the Today view
   triage:        { policy: local,             lane: background,  max_tokens: 600 }
   checkin:       { policy: local,             lane: interactive, max_tokens: 800 }
   plan_week:     { policy: local_then_claude, lane: interactive, tier: default, effort: high, max_tokens: 2000 }

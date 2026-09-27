@@ -54,6 +54,33 @@ class CreditTopUp(SQLModel, table=True):
     amount_usd: float
 
 
+class GoogleAccount(SQLModel, table=True):
+    """A connected Google account. Tokens are encrypted by the Vault; the key is not in this database."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    slot: str = Field(index=True, unique=True)  # "personal" | "school"
+    email: str | None = None
+    refresh_token_enc: str
+    access_token_enc: str | None = None
+    access_expires: datetime | None = None
+    scopes: str = ""
+    connected_at: datetime = Field(default_factory=utcnow)
+    last_error: str | None = None
+
+
+class Briefing(SQLModel, table=True):
+    """Ordinal's briefing for a day. Written from real data only; `sources` records what was used."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=utcnow, index=True)
+    day: str = Field(index=True)  # local date, YYYY-MM-DD
+    text: str
+    brain: str | None = None
+    model: str | None = None
+    sources: str | None = None  # e.g. "4 events · 2 due · 9 unread"
+    trigger: str = "scheduled"  # "scheduled" | "manual"
+
+
 _engine = None
 
 

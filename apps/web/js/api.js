@@ -35,4 +35,7 @@ export const api = {
   askClaude: (agentId) => request("/api/chat", { method: "POST", body: { agent_id: agentId, retry_with_claude: true } }),
   usage: () => request("/api/usage/summary"),
   addCredit: (amount) => request("/api/usage/credit", { method: "POST", body: { amount_usd: amount } }),
+  today: (refresh = false) => request(`/api/today${refresh ? "?refresh=true" : ""}`),
+  writeBriefing: () => request("/api/briefing", { method: "POST" }),
+  disconnectGoogle: (slot) => request("/api/google/disconnect", { method: "POST", body: { slot } }),
 };

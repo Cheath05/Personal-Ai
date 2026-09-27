@@ -85,11 +85,33 @@
     <!-- ================= TODAY ================= -->
     <main class="view" id="v-today" hidden>
       <div class="vhead"><div><h1>Today</h1><p>Your calendar, both inboxes, Blackboard deadlines and the morning briefing.</p></div><span class="who">ORDINAL [ORD1-2071]</span></div>
-      <section class="panel soon">
-        <div class="ph"><span class="t">Arrives in Phase 2</span><span class="m">LIFE DASHBOARD</span></div>
-        <p>Connects Google Calendar (shown in Apple Calendar), your UMBC and personal Gmail, and the Blackboard calendar feed. Ordinal writes a briefing at 6:00 every morning.</p>
-        <p class="note">Nothing here is filled in until those connections exist, so you'll never see made-up events.</p>
-      </section>
+      <div class="grid two today">
+        <section class="panel neon span-all">
+          <div class="ph"><span class="t">Briefing</span><span class="m" id="brief-meta">–</span></div>
+          <p class="brief" id="brief-text">Loading…</p>
+          <div class="row-actions">
+            <button type="button" class="btn" id="brief-now">Write it now</button>
+            <span class="note small" id="brief-note"></span>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Schedule</span><span class="m">TODAY · TOMORROW</span></div>
+          <ul class="list agenda" id="sched-list"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Due soon</span><span class="m">BLACKBOARD · 7 DAYS</span></div>
+          <ul class="list agenda" id="due-list"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Inbox</span><span class="m">UNREAD · LAST 2 DAYS</span></div>
+          <ul class="list agenda" id="inbox-list"></ul>
+        </section>
+        <section class="panel">
+          <div class="ph"><span class="t">Connections</span><span class="m">READ-ONLY</span></div>
+          <ul class="list" id="conn-list"></ul>
+          <p class="note small">Cardinal can read these but can't change anything. Changes arrive with approvals in Phase 2b.</p>
+        </section>
+      </div>
     </main>
 
     <!-- ================= TRAINING ================= -->

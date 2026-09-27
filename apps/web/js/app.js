@@ -60,6 +60,7 @@ function go(view) {
   nexus?.setView(view);
   history.replaceState(null, "", `#${view}`);
   if (view === "access") refreshAccess();
+  if (view === "today") refreshToday();
 }
 
 /* ---------- Agent selection ---------- */
@@ -335,6 +336,140 @@ async function refreshAccess() {
   list.replaceChildren(...items, cl);
 }
 
+/* ---------- Today: briefing, schedule, due dates, inbox ---------- */
+function timeFmt(tz, opts) { return new Intl.DateTimeFormat([], { timeZone: tz, hourCycle: "h23", ...opts }); }
+
+function agendaRow(when, title, sub, cls) {
+  const li = el("li", cls);
+  const text = el("div", "what");
+  text.append(el("b", null, title));
+  if (sub) text.append(el("span", "sub", sub));
+  li.append(el("span", "when", when), text);
+  return li;
+}
+const emptyRow = (text) => el("li", "empty-row", text);
+
+function renderToday(t) {
+  const tz = t.timezone;
+  const hm = timeFmt(tz, { hour: "2-digit", minute: "2-digit" });
+  const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }); // YYYY-MM-DD, like briefing.day
+  const dayName = timeFmt(tz, { weekday: "short", day: "numeric", month: "short" });
+  const src = Object.fromEntries(t.sources.map((s) => [s.id, s]));
+  const googleOk = t.sources.some((s) => s.kind === "google" && s.status === "ok");
+
+  // Briefing
+  const b = t.briefing;
+  const today = dayKey.format(new Date());
+  $("brief-text").textContent = b ? b.text
+    : googleOk || src.blackboard?.status === "ok" ? `No briefing yet today. Ordinal writes one at ${t.briefing_time}, or press Write it now.`
+    : "Connect Google or Blackboard below, and Ordinal will write your briefing every morning from real data.";
+  $("brief-meta").textContent = b
+    ? `${b.day === today ? "TODAY" : b.day} · ${hm.format(new Date(b.ts))} · ${b.brain_label || b.brain}`.toUpperCase()
+    : `DAILY AT ${t.briefing_time}`;
+  $("brief-note").textContent = b?.sources ? `From ${b.sources}` : "";
+
+  // Schedule: today and tomorrow
+  const sched = $("sched-list");
+  if (!googleOk) sched.replaceChildren(emptyRow("Connect Google to see your calendar."));
+  else {
+    const rows = [];
+    let lastDay = "";
+    t.events.forEach((e) => {
+      const s = new Date(e.start), d = dayName.format(s);
+      if (d !== lastDay) { rows.push(el("li", "day", dayKey.format(s) === today ? `Today · ${d}` : d)); lastDay = d; }
+      const when = e.all_day ? "all day" : `${hm.format(s)}–${hm.format(new Date(e.end))}`;
+      rows.push(agendaRow(when, e.title, [e.location, e.calendar].filter(Boolean).join(" · ")));
+    });
+    sched.replaceChildren(...(rows.length ? rows : [emptyRow("Nothing on your calendar today or tomorrow.")]));
+  }
+
+  // Due soon
+  const due = $("due-list");
+  const bb = src.blackboard;
+  if (!bb || bb.status === "not_connected") due.replaceChildren(emptyRow("Blackboard isn't connected yet."));
+  else if (bb.status === "error") due.replaceChildren(emptyRow(bb.detail));
+  else if (!t.due.length) due.replaceChildren(emptyRow("Nothing due in the next 7 days."));
+  else {
+    due.replaceChildren(...t.due.map((d) => {
+      const at = new Date(d.due);
+      const soon = at - Date.now() < 48 * 3600e3;
+      return agendaRow(`${dayName.format(at)}${d.all_day ? "" : ` · ${hm.format(at)}`}`, d.title, d.course, soon ? "soon" : "");
+    }));
+  }
+
+  // Inbox
+  const inbox = $("inbox-list");
+  if (!t.inbox.length) inbox.replaceChildren(emptyRow(googleOk ? "No inbox data." : "Connect Google to see your inbox."));
+  else {
+    const rows = [];
+    t.inbox.forEach((box) => {
+      const g = t.google.find((x) => x.slot === box.account);
+      rows.push(el("li", "day", `${g ? g.label : box.account} · ${box.unread} unread`));
+      if (!box.recent.length) rows.push(emptyRow("No new unread mail from people."));
+      box.recent.forEach((m) => rows.push(agendaRow(hm.format(new Date(m.ts)), m.subject, m.from, m.important ? "soon" : "")));
+    });
+    inbox.replaceChildren(...rows);
+  }
+
+  // Connections
+  const conn = $("conn-list");
+  const items = t.google.map((g) => {
+    const li = el("li");
+    const info = el("div");
+    const s = src[`google:${g.slot}`];
+    info.append(el("b", null, g.label), el("span", "sub",
+      !t.google_configured ? "Needs Google set up on the hub first"
+        : g.connected ? `${g.email || "Connected"}${g.gmail === false ? " · Gmail not granted" : ""}${g.calendar === false ? " · Calendar not granted" : ""}`
+        : g.slot === "school" ? "Your UMBC account (may be blocked by UMBC)" : "Calendar and Gmail, read-only"));
+    li.append(info);
+    if (s?.status === "error") li.append(el("span", "tag bad", "Error"));
+    if (g.connected) {
+      const btn = el("button", "linkish", "Disconnect");
+      btn.type = "button";
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Disconnect ${g.label}? Cardinal will stop reading it and forget its sign-in.`)) return;
+        try { await api.disconnectGoogle(g.slot); refreshToday(true); toast(`${g.label} disconnected.`); } catch (e) { toast(e.message); }
+      });
+      li.append(btn);
+    } else if (t.google_configured) {
+      const a = el("a", "btn", "Connect");
+      a.href = `/api/google/connect?slot=${g.slot}`;
+      li.append(a);
+    } else li.append(el("span", "tag", "Setup"));
+    return li;
+  });
+  const bbLi = el("li");
+  const bbInfo = el("div");
+  bbInfo.append(el("b", null, "Blackboard"), el("span", "sub",
+    bb?.status === "ok" ? "Calendar feed" : bb?.status === "error" ? bb.detail : "Add the calendar feed link on the hub"));
+  bbLi.append(bbInfo, el("span", `tag ${bb?.status === "ok" ? "ok" : bb?.status === "error" ? "bad" : ""}`,
+    bb?.status === "ok" ? "Connected" : bb?.status === "error" ? "Error" : "Not set"));
+  conn.replaceChildren(...items, bbLi);
+}
+
+async function refreshToday(force = false) {
+  try {
+    state.today = await api.today(force);
+    renderToday(state.today);
+  } catch (e) {
+    $("brief-text").textContent = `Couldn't load today: ${e.message}`;
+  }
+}
+
+$("brief-now").addEventListener("click", async () => {
+  const btn = $("brief-now");
+  btn.disabled = true;
+  $("brief-note").textContent = "Ordinal is reading your day and writing…";
+  try {
+    await api.writeBriefing();
+    await refreshToday();
+  } catch (e) {
+    $("brief-note").textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ---------- System Call palette ---------- */
 const palette = $("palette"), scrim = $("scrim"), palInput = $("pal-input"), palList = $("pal-list");
 let commands = [], filtered = [];
@@ -391,6 +526,11 @@ async function boot() {
   buildCommands();
   await select(0);
   const hash = location.hash.replace("#", "");
+  const connected = new URLSearchParams(location.search).get("connected");
+  if (connected) {
+    history.replaceState(null, "", `/${location.hash}`);
+    toast(`${connected === "school" ? "UMBC" : "Personal"} Google connected. Cardinal can now read it.`);
+  }
   if (hash && hash !== "nexus") go(hash);
   refreshBrains();
   refreshUsage();

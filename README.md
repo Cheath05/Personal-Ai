@@ -84,6 +84,41 @@ Cardinal then runs around the clock at `https://cardinal.<your-tailnet>.ts.net`,
 
 If Cardinal doesn't come back healthy, the hub rolls back to the previous commit and skips the bad one. See what happened with `journalctl -u cardinal-update`. Changes to `setup-hub.sh` itself, such as new services or packages, still need you to run it by hand. See PLAN.md §3 for the VM size and the Tailscale steps.
 
+## Connect Google and Blackboard (Phase 2)
+
+Cardinal reads your calendar, both inboxes (senders and subjects) and Blackboard due dates. It can't change anything yet.
+
+**1. Create a Google Cloud project (free, once).** Go to [console.cloud.google.com](https://console.cloud.google.com), signed in as your personal Gmail.
+
+1. Create a project named **Cardinal**.
+2. **APIs & Services → Library:** enable the **Google Calendar API** and the **Gmail API**.
+3. **Google Auth Platform → Get started:**
+   - App name `Cardinal`, with your Gmail as the support email.
+   - Audience: **External**.
+4. **Audience → Publish app**, so the status reads **In production**. In "Testing", Google signs you out every 7 days.
+5. **Clients → Create client:**
+   - Type: **Web application**.
+   - Authorized redirect URI: `https://cardinal.tailaf3b0c.ts.net/api/google/callback`
+   - Keep the page with the Client ID and secret open.
+
+**2. Give them to the hub**, from a terminal on the Mac. Each command asks for the value with hidden typing, so it never shows on screen or in chat:
+
+```bash
+ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh GOOGLE_CLIENT_ID'
+ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh GOOGLE_CLIENT_SECRET'
+ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh CARDINAL_BLACKBOARD_ICS_URL'
+```
+
+The Blackboard link is at **Blackboard → Calendar → settings → Get external calendar link**.
+
+**3. Connect.** Open Cardinal → **Today** → **Connect** next to Personal Google, then UMBC Google.
+
+- Google will warn "Google hasn't verified this app". That's expected, because you're its developer. Choose **Advanced → Go to Cardinal**.
+- Leave both boxes (Calendar and Gmail) ticked.
+- If UMBC shows "Access blocked", its admins don't allow outside apps. Instead, forward UMBC mail to your Gmail and share your UMBC calendar with your Gmail account.
+
+Sign-in tokens are encrypted on the hub. The key is in `data/secret.key`, which is not in the backups. Disconnect any time from Today, or at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
 ## Tests
 
 ```bash

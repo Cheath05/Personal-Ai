@@ -1,4 +1,4 @@
-# Next session: Phase 2 (Life Dashboard)
+# Next session: Phase 2b (Action Previews and trust rules)
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -39,23 +39,27 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - **Gotcha:** Ollama answers **403** to any `Host` header that isn't localhost or an IP (DNS-rebinding protection). So the hub's `brains.yaml` uses the Mac's Tailscale IP, not `m3-air`. The G14 doesn't hit this, because it listens on `0.0.0.0`.
 - The hub shows all three brains **online**: g14, mac and server. `setup-hub.sh`'s template matches.
 
-## Next: Phase 2 (Life Dashboard)
+## Phase 2a (built 27 Sep 2026): reading your day
 
-Phase 1.6 (Voice) can wait: it needs a VRAM plan first. Phase 2 needs these from the user before any code can talk to Google:
+- **Code:**
+  - `cardinal/sources/google.py`: OAuth, Calendar and Gmail over REST, read-only scopes.
+  - `cardinal/sources/blackboard.py`: the iCal feed.
+  - `cardinal/today.py`: one cached snapshot. It also builds each agent's data block, filtered by `access` in agents.yaml.
+  - `cardinal/briefing.py`: Ordinal's briefing, plus a 30-second scheduler loop. It writes at `CARDINAL_BRIEFING_TIME`, catches up if the hub was down, and never writes when nothing is connected.
+  - `cardinal/vault.py`: Fernet encryption. The key is in `data/secret.key`, not in the DB or the backups.
+- **API:** `/api/today`, `/api/briefing`, `/api/google/{connect,callback,disconnect}`. Web: the Today view.
+- **The hub's .env** has `CARDINAL_PUBLIC_URL=https://cardinal.tailaf3b0c.ts.net`. The user adds the Google client ID, the Google secret and the Blackboard link with `infra/set-secret.sh` (README → "Connect Google and Blackboard").
+- **Tested:** 40 tests with mocked Google and Blackboard. A demo run on the Mac's `qwen3:4b-instruct` wrote an accurate briefing in 13 s.
+- **Not yet tested against real Google.** The first real sign-in is the test. The UMBC account may be blocked by its admins.
 
-1. **Google Cloud project** (free) on the personal Gmail, with the Gmail and Calendar APIs enabled and an OAuth client of type "Web application".
-   - Redirect URI: `https://cardinal.tailaf3b0c.ts.net/api/google/callback`.
-   - Set the consent screen to **In production**. Apps left in "Testing" get refresh tokens that expire every 7 days.
-2. **Blackboard:** Calendar → settings → *Get external calendar link* (an iCal URL).
-3. **UMBC:** try signing in with the UMBC account. If it shows "Access blocked", use the fallbacks in PLAN §4 (forward UMBC mail, share the UMBC calendar).
+## Next: Phase 2b (acting, with approval)
 
-What gets built:
-- Google OAuth, with tokens stored on the hub only.
-- Calendar and Gmail readers.
-- The Blackboard iCal feed.
-- A scheduler for the 6:00 briefing.
-- Ordinal's briefing on the Today view.
-- The Action Preview queue, trust rules and the Activity Log.
+1. Action Preview queue: proposed change, before/after, why, undoable. Authorize once, Always allow, or Deny.
+2. Trust rules, narrowly matched, plus a hard-coded always-ask list (PLAN §6). Activity Log with Undo.
+3. First actions:
+   - Add the `calendar.app.created` scope, so Cardinal can only edit calendars it creates. Asked for with incremental auth.
+   - Create a "Cardinal" calendar.
+   - Study blocks proposed from Blackboard due dates.
 
 ## Things to keep in mind
 
