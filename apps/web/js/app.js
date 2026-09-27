@@ -73,7 +73,7 @@ function go(view) {
   document.body.dataset.view = view;
   nexus?.setView(view);
   history.replaceState(null, "", `#${view}`);
-  if (view === "access") { refreshAccess(); security?.refresh(); }
+  if (view === "access") { refreshAccess(); refreshToday(); security?.refresh(); }
   if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); workforce?.refreshInbox(); }
   if (view === "review") { reviewUI?.refresh(); workforce?.refreshFocus(); }
   if (view === "training") runningUI?.refresh();
@@ -512,6 +512,7 @@ function renderToday(t) {
     ? `${b.day === today ? "TODAY" : b.day} · ${hm.format(new Date(b.ts))} · ${b.brain_label || b.brain}`.toUpperCase()
     : `DAILY AT ${t.briefing_time}`;
   $("brief-note").textContent = b?.sources ? `From ${b.sources}` : "";
+  $("brief-text").closest(".panel").classList.toggle("brief-empty", !b);  // no briefing yet: one compact line
 
   // Due soon
   const due = $("due-list");
@@ -527,7 +528,10 @@ function renderToday(t) {
     }));
   }
 
-  // Connections
+  renderGlance(t);
+  renderAlerts(t, src);
+
+  // Connections (shown in Access → Accounts)
   const conn = $("conn-list");
   const items = t.google.map((g) => {
     const li = el("li");
@@ -591,6 +595,68 @@ function renderToday(t) {
   });
   conn.replaceChildren(...items, bbLi, ...feedLis);
 }
+
+// The glance strip: what's next, what's due next (the other two tiles are filled by actions.js and workforce.js).
+function setGlance(id, value, sub, tone = "") {
+  const t = $(id);
+  t.querySelector("b").textContent = value;
+  t.querySelector("small").textContent = sub || "";
+  t.dataset.tone = tone;
+}
+function renderGlance(t) {
+  const tz = t.timezone;
+  const hm = timeFmt(tz, { hour: "2-digit", minute: "2-digit" });
+  const dayName = timeFmt(tz, { weekday: "short", day: "numeric", month: "short" });
+  const now = Date.now();
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+  const dayOf = (iso) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(iso));
+  const next = t.events.find((e) => !e.all_day && new Date(e.end) > now && dayOf(e.start) === todayKey);
+  if (next) {
+    const mins = Math.round((new Date(next.start) - now) / 60000);
+    const when = mins <= 0 ? `now, until ${hm.format(new Date(next.end))}`
+      : `${hm.format(new Date(next.start))} · in ${mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")}`}`;
+    setGlance("g-next", next.title, when, mins <= 15 ? "soon" : "");
+  } else {
+    const tomorrow = t.events.find((e) => !e.all_day && dayOf(e.start) > todayKey);
+    setGlance("g-next", "Free", tomorrow ? `Tomorrow ${hm.format(new Date(tomorrow.start))}: ${tomorrow.title}` : "Nothing else today");
+  }
+  const due = t.due[0];
+  if (due) {
+    const soon = new Date(due.due) - now < 24 * 3600e3;  // amber only when it's really close
+    setGlance("g-due", due.title, `${dayName.format(new Date(due.due))}${due.all_day ? "" : ` · ${hm.format(new Date(due.due))}`}${t.due.length > 1 ? ` · +${t.due.length - 1} more` : ""}`, soon ? "soon" : "");
+  } else setGlance("g-due", "Nothing", t.blackboard_configured ? "due in the next 7 days" : "Blackboard isn't connected");
+}
+document.querySelectorAll(".glance .g-tile").forEach((b) => b.addEventListener("click", () => {
+  const target = $(b.dataset.go);
+  (target && !target.hidden ? target : $("cal-panel")).scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+}));
+
+// Only problems reach Today: a sign-in to renew or a feed that fails. Everything else lives in Access → Accounts.
+function renderAlerts(t, src) {
+  const alerts = [];
+  t.google.forEach((g) => {
+    const s = src[`google:${g.slot}`];
+    if (g.connected && s?.status === "error") alerts.push(`${g.label}: ${s.detail || "sign-in needs renewing"}`);
+  });
+  t.sources.filter((x) => x.kind !== "google" && x.status === "error").forEach((x) => alerts.push(`${x.label}: ${x.detail}`));
+  const box = $("today-alerts");
+  box.hidden = !alerts.length;
+  if (!alerts.length) return;
+  const fix = el("button", "linkish", "Fix in Access");
+  fix.type = "button";
+  fix.addEventListener("click", () => { go("access"); showAccessTab("accounts"); });
+  box.replaceChildren(el("span", "tag warn", "Needs a look"), el("span", null, alerts.join(" · ")), fix);
+}
+
+// Access is split into tabs, remembered per device.
+const ACCESS_TAB_KEY = "cardinal.accessTab";
+function showAccessTab(tab) {
+  document.querySelectorAll("#access-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll("#v-access .access-grid > section").forEach((p) => { p.hidden = p.dataset.tab !== tab; });
+  try { localStorage.setItem(ACCESS_TAB_KEY, tab); } catch { /* private mode */ }
+}
+document.querySelectorAll("#access-tabs button").forEach((b) => b.addEventListener("click", () => showAccessTab(b.dataset.tab)));
+showAccessTab((() => { try { return localStorage.getItem(ACCESS_TAB_KEY) || "accounts"; } catch { return "accounts"; } })());
 
 $("feed-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -704,7 +770,12 @@ async function boot() {
   runningUI = createRunning({ toast, onChange: () => actions.refresh() });
   brainUI = createBrain({ toast, openDates: (job) => calendar.openImportJob(job), goReview: () => go("review") });
   workforce = createWorkforce({ toast, onChange: () => { actions.refresh(); calendar.refresh(); reviewUI.refreshChip(); } });
-  setInterval(() => { if (!document.hidden) { actions.refresh(); reviewUI.refreshChip(); } }, 60000);
+  setInterval(() => {
+    if (document.hidden) return;
+    actions.refresh();
+    reviewUI.refreshChip();
+    if (state.view === "today" && state.today) renderGlance(state.today);  // "in 25 min" keeps counting down
+  }, 60000);
   $("ci-chip").addEventListener("click", () => go("review"));
   $("ok-chip").addEventListener("click", () => go("today"));
   buildCommands();

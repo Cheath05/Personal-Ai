@@ -5,6 +5,8 @@ items. Your own items are mirrored to the "Cardinal" Google calendar when that's
 in Apple Calendar on any device that has the Google account added.
 """
 
+import asyncio
+import logging
 import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -12,11 +14,13 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session, col, select
 
 from .config import Settings
-from .db import CalendarFeed, CalendarItem
+from .db import CalendarFeed, CalendarItem, get_engine
 from .sources.blackboard import Blackboard, BlackboardError
 from .sources.google import SLOTS, Google, GoogleError
 from .sources.ics import Feed, FeedError, day_bounds
 from .vault import Vault, VaultError
+
+log = logging.getLogger("cardinal.calendar")
 
 KINDS = ("event", "class", "due", "exam", "quiz", "reading", "no_class")
 KIND_COLORS = {"event": "#22e3c4", "class": "#3d8bff", "due": "#ffb13d", "exam": "#ff4d6d",
@@ -25,6 +29,8 @@ FEED_COLORS = ["#a47bff", "#ff4fd8", "#9dff4a", "#22e3c4", "#e0e8ff"]
 BLACKBOARD_COLOR = "#ffb13d"
 BACK_DAYS, AHEAD_DAYS = 7, 120
 CACHE_SECONDS = 180
+WARM_SECONDS = 150
+MAX_STALE_SECONDS = 1800
 
 
 class CalendarError(Exception):
@@ -63,6 +69,11 @@ def make_times(day: date, start: str | None, end: str | None, tz: ZoneInfo) -> t
     return begin, finish, False
 
 
+def _log_failure(task: asyncio.Task) -> None:
+    if not task.cancelled() and task.exception():
+        log.error("Background calendar refresh failed", exc_info=task.exception())
+
+
 class Calendar:
     def __init__(self, settings: Settings, google: Google, blackboard: Blackboard, vault: Vault, feed_client=None):
         self.settings = settings
@@ -71,7 +82,8 @@ class Calendar:
         self.vault = vault
         self.feed_client = feed_client
         self._feeds: dict[int, Feed] = {}
-        self._cache: dict[str, tuple[float, dict]] = {}
+        self._cache: dict[str, tuple[float, dict]] = {}  # per day: what came from Google, links and Blackboard
+        self._tasks: dict[str, asyncio.Task] = {}
         self.proposals = None  # set by Actions: pending blocks shown as ghosts until you decide
 
     @property
@@ -92,64 +104,96 @@ class Calendar:
         return [item_event(r, self.tz) for r in rows]
 
     async def feeds_between(self, session: Session, start: datetime, end: datetime) -> tuple[list[dict], list[dict]]:
-        events, errors = [], []
-        for f in session.exec(select(CalendarFeed)).all():
+        async def one(f: CalendarFeed) -> tuple[list[dict], dict | None]:
             try:
                 feed = self._feeds.get(f.id)
                 if feed is None:
                     feed = self._feeds[f.id] = Feed(self.vault.decrypt(f.url_enc), self.feed_client)
-                for e in await feed.between(start, end, self.tz):
-                    events.append({**e, "id": f"feed:{f.id}:{e['uid']}:{e['start']}", "calendar": f.name,
-                                   "source": "feed", "kind": "event", "color": f.color, "deletable": False})
+                return [{**e, "id": f"feed:{f.id}:{e['uid']}:{e['start']}", "calendar": f.name, "source": "feed",
+                         "kind": "event", "color": f.color, "deletable": False}
+                        for e in await feed.between(start, end, self.tz)], None
             except (FeedError, VaultError) as e:
-                errors.append({"source": f.name, "detail": str(e)})
-        return events, errors
+                return [], {"source": f.name, "detail": str(e)}
+        results = await asyncio.gather(*(one(f) for f in session.exec(select(CalendarFeed)).all()))
+        return [e for evs, _ in results for e in evs], [err for _, err in results if err]
 
     async def day(self, session: Session, d: date, force: bool = False) -> dict:
+        """One day: Google, calendar links and Blackboard (cached, refreshed in the background when stale), plus
+        your own items and pending proposals, which are read fresh every time so they're never out of date."""
         today = self.today()
         if not (today - timedelta(days=BACK_DAYS) <= d <= today + timedelta(days=AHEAD_DAYS)):
             raise CalendarError(f"Pick a day from {BACK_DAYS} days ago to {AHEAD_DAYS} days ahead.")
-        key = d.isoformat()
-        hit = self._cache.get(key)
-        if hit and not force and time.time() - hit[0] < CACHE_SECONDS:
-            return hit[1]
-        tz = self.tz
-        start, end = day_bounds(d, tz)
-        events, due, errors = [], [], []
-
-        for slot, label in SLOTS.items():
-            acct = self.google.account(session, slot)
-            if not acct:
-                continue
-            try:
-                for e in await self.google.events(session, acct, start, end, tz):
-                    events.append({**e, "source": "google", "kind": "event",
-                                   "color": e.get("color") or "#3d8bff", "deletable": False})
-            except GoogleError as e:
-                errors.append({"source": label, "detail": str(e)})
-
-        events += self.items_between(session, start, end)
+        remote = await self._remote(session, d, force)
+        start, end = day_bounds(d, self.tz)
+        events = remote["events"] + self.items_between(session, start, end)
         if self.proposals:
             events += self.proposals(session, start, end)
-        feed_events, feed_errors = await self.feeds_between(session, start, end)
-        events += feed_events
-        errors += feed_errors
-
-        try:
-            for dd in await self.blackboard.between(start, end, tz):
-                due.append({**dd, "color": BLACKBOARD_COLOR, "source": "blackboard"})
-        except BlackboardError as e:
-            errors.append({"source": "Blackboard", "detail": str(e)})
-
         # Keep only what overlaps this day (a guard against sources that return a wider window).
         events = [e for e in events if datetime.fromisoformat(e["start"]) < end
                   and max(datetime.fromisoformat(e["end"]), datetime.fromisoformat(e["start"])) >= start]
-        out = {"date": key, "timezone": self.settings.timezone, "today": today.isoformat(),
-               "min_date": (today - timedelta(days=BACK_DAYS)).isoformat(),
-               "max_date": (today + timedelta(days=AHEAD_DAYS)).isoformat(),
-               "events": sorted(events, key=lambda e: (not e["all_day"], e["start"])), "due": due, "errors": errors,
-               "can_sync": self.google.can_write(self.google.account(session, "personal"))}
-        self._cache[key] = (time.time(), out)
+        return {"date": d.isoformat(), "timezone": self.settings.timezone, "today": today.isoformat(),
+                "min_date": (today - timedelta(days=BACK_DAYS)).isoformat(),
+                "max_date": (today + timedelta(days=AHEAD_DAYS)).isoformat(),
+                "events": sorted(events, key=lambda e: (not e["all_day"], e["start"])), "due": remote["due"],
+                "errors": remote["errors"], "can_sync": self.google.can_write(self.google.account(session, "personal"))}
+
+    async def _remote(self, session: Session, d: date, force: bool) -> dict:
+        hit = self._cache.get(d.isoformat())
+        age = time.time() - hit[0] if hit else None
+        if hit and not force:
+            if age < CACHE_SECONDS:
+                return hit[1]
+            if age < MAX_STALE_SECONDS:
+                self._refresh_soon(d)
+                return hit[1]
+        return await self._fetch_remote(session, d)
+
+    def warm(self, days: list[date]) -> None:
+        """Called by the scheduler for today and tomorrow, so opening the calendar never waits."""
+        for d in days:
+            hit = self._cache.get(d.isoformat())
+            if not hit or time.time() - hit[0] > WARM_SECONDS:
+                self._refresh_soon(d)
+
+    def _refresh_soon(self, d: date) -> None:
+        key = d.isoformat()
+        if key in self._tasks and not self._tasks[key].done():
+            return
+
+        async def run():
+            with Session(get_engine()) as s:
+                await self._fetch_remote(s, d)
+        self._tasks[key] = asyncio.create_task(run())
+        self._tasks[key].add_done_callback(_log_failure)
+
+    async def _fetch_remote(self, session: Session, d: date) -> dict:
+        tz = self.tz
+        start, end = day_bounds(d, tz)
+
+        async def account(slot: str, label: str) -> tuple[list[dict], dict | None]:
+            acct = self.google.account(session, slot)
+            if not acct:
+                return [], None
+            try:
+                return [{**e, "source": "google", "kind": "event", "color": e.get("color") or "#3d8bff", "deletable": False}
+                        for e in await self.google.events(session, acct, start, end, tz)], None
+            except GoogleError as e:
+                return [], {"source": label, "detail": str(e)}
+
+        async def blackboard() -> tuple[list[dict], dict | None]:
+            try:
+                return [{**dd, "color": BLACKBOARD_COLOR, "source": "blackboard"}
+                        for dd in await self.blackboard.between(start, end, tz)], None
+            except BlackboardError as e:
+                return [], {"source": "Blackboard", "detail": str(e)}
+
+        # Both Google accounts, every calendar link and Blackboard at once.
+        accounts, (feed_events, feed_errors), (due, bb_error) = await asyncio.gather(
+            asyncio.gather(*(account(slot, label) for slot, label in SLOTS.items())),
+            self.feeds_between(session, start, end), blackboard())
+        out = {"events": [e for evs, _ in accounts for e in evs] + feed_events, "due": due,
+               "errors": [err for _, err in accounts if err] + feed_errors + ([bb_error] if bb_error else [])}
+        self._cache[d.isoformat()] = (time.time(), out)
         return out
 
     # ---------- Your own items ----------
@@ -158,7 +202,7 @@ class Calendar:
         """Copy an item to the Cardinal Google calendar. Returns a warning if it couldn't."""
         acct = self.google.account(session, "personal")
         if not self.google.can_write(acct):
-            return "Saved in Cardinal. Reconnect Personal Google on Today to also put it in Google and Apple Calendar."
+            return "Saved in Cardinal. Reconnect Personal Google in Access → Accounts to also put it in Google and Apple Calendar."
         try:
             item.google_event_id = await self.google.put_event(session, acct, item, self.tz)
             session.add(item)

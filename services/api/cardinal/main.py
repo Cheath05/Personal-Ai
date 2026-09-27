@@ -381,7 +381,7 @@ async def google_callback(code: str | None = None, state: str | None = None, err
     app.state.today.invalidate()
     if acct.slot == "personal":
         await app.state.today.calendar.sync_unsynced(session)  # items saved before calendar access was granted
-    return RedirectResponse(f"/?connected={acct.slot}#today", status_code=302)
+    return RedirectResponse(f"/?connected={acct.slot}#access", status_code=302)
 
 
 class SlotIn(BaseModel):
@@ -1347,7 +1347,7 @@ async def agents_status(session: Session = Depends(get_session)):
         elif a.id in ("relay", "ordinal") and not connected:
             level, reason = "warn", "Gmail and Calendar aren't connected."
         elif a.id == "relay" and not any(g.get("can_draft") for g in connected):
-            level, reason = "warn", "Can sort mail; reconnect Google on Today to allow drafts."
+            level, reason = "warn", "Can sort mail; reconnect Google in Access → Accounts to allow drafts."
         elif a.id == "vector":
             last = session.exec(select(running.Run).order_by(col(running.Run.start).desc())).first()
             if not last:

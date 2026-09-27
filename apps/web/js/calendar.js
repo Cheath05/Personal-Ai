@@ -1,4 +1,4 @@
-// The Today calendar: one day on a time grid, a strip of days (a week back, two weeks ahead),
+// The Today calendar: one day on a time grid, a week of days around it,
 // adding and removing your own items, and importing a syllabus (the AI proposes, you confirm).
 import { api } from "./api.js";
 
@@ -18,7 +18,7 @@ const BANDS = [ // time-of-day tint behind the grid
   { from: 21, to: 24, name: "Night", cls: "night" },
 ];
 const KIND_LABEL = { event: "Event", class: "Class", due: "Due", exam: "Exam", quiz: "Quiz", reading: "Reading / study", no_class: "No class" };
-const STRIP_BACK = 7, STRIP_AHEAD = 14;
+const STRIP_BACK = 3, STRIP_AHEAD = 3;  // a week around the day you're looking at
 
 const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
@@ -61,7 +61,7 @@ export function createCalendar({ toast, onChange, onProposal }) {
     renderAllDay(d);
     renderGrid(d, isToday);
     const notes = d.errors.map((e) => `${e.source}: ${e.detail}`);
-    if (!d.can_sync) notes.push("Items you add are saved in Cardinal. Reconnect Personal Google below to also put them in Google and Apple Calendar.");
+    if (!d.can_sync) notes.push("Items you add are saved in Cardinal. Reconnect Personal Google in Access → Accounts to also put them in Google and Apple Calendar.");
     $("cal-note").textContent = notes.join(" ");
   }
 
@@ -69,7 +69,7 @@ export function createCalendar({ toast, onChange, onProposal }) {
     const strip = $("cal-strip");
     const chips = [];
     for (let i = -STRIP_BACK; i <= STRIP_AHEAD; i++) {
-      const iso = addDays(d.today, i);
+      const iso = addDays(d.date, i);
       if (iso < d.min_date || iso > d.max_date) continue;
       const b = el("button", `chip${iso === d.date ? " on" : ""}${iso === d.today ? " now" : ""}${iso < d.today ? " past" : ""}`);
       b.type = "button";
@@ -82,7 +82,8 @@ export function createCalendar({ toast, onChange, onProposal }) {
       chips.push(b);
     }
     strip.replaceChildren(...chips);
-    strip.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "center" });
+    const on = strip.querySelector(".on");  // centre the chosen day without scrolling the page itself
+    if (on) strip.scrollLeft += on.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - on.offsetWidth) / 2;
   }
 
   function chipFor(e, time) {
@@ -95,9 +96,23 @@ export function createCalendar({ toast, onChange, onProposal }) {
     return c;
   }
 
+  function dedupe(events) {
+    const seen = new Map();
+    const out = [];
+    events.forEach((e) => {
+      const key = e.source === "proposed" ? `p${e.action_id}` : `${e.title.trim().toLowerCase()}|${e.start}|${e.end}`;
+      const first = seen.get(key);
+      if (first) { first.copies = (first.copies || 1) + 1; return; }
+      const copy = { ...e };
+      seen.set(key, copy);
+      out.push(copy);
+    });
+    return out;
+  }
+
   function renderAllDay(d) {
     const box = $("cal-allday");
-    const chips = d.events.filter((e) => e.all_day).map((e) => chipFor(e));
+    const chips = dedupe(d.events.filter((e) => e.all_day)).map((e) => chipFor(e));
     d.due.forEach((x) => chips.push(chipFor({ ...x, start: x.due, end: x.due, calendar: x.course ? `Blackboard · ${x.course}` : "Blackboard", kind: "due", source: "blackboard" },
       x.all_day ? "due" : `due ${hm().format(new Date(x.due))}`)));
     box.hidden = !chips.length;
@@ -124,7 +139,7 @@ export function createCalendar({ toast, onChange, onProposal }) {
 
   function renderGrid(d, isToday) {
     const grid = $("cal-grid");
-    const timed = d.events.filter((e) => !e.all_day).map((e) => {
+    const timed = dedupe(d.events.filter((e) => !e.all_day)).map((e) => {
       const s = dayOf(e.start) < d.date ? 0 : minutesOf(e.start);
       const e2 = dayOf(e.end) > d.date ? 24 * 60 : Math.max(minutesOf(e.end), s + 20);
       return { ev: e, s, e: e2 };
@@ -163,8 +178,9 @@ export function createCalendar({ toast, onChange, onProposal }) {
       if (h < 40) b.classList.add("short");
       b.style.left = `calc(var(--gutter) + (100% - var(--gutter)) * ${t.col / t.cols})`;
       b.style.width = `calc((100% - var(--gutter)) / ${t.cols} - 4px)`;
-      b.append(el("b", null, e.title), el("small", null, `${hm().format(new Date(e.start))}–${hm().format(new Date(e.end))}${e.calendar ? ` · ${e.calendar}` : ""}`));
-      b.title = `${e.title} (${e.calendar || ""})`;
+      b.append(el("b", null, e.copies ? `${e.title} ×${e.copies}` : e.title),
+        el("small", null, `${hm().format(new Date(e.start))}–${hm().format(new Date(e.end))}${e.calendar ? ` · ${e.calendar}` : ""}`));
+      b.title = `${e.title} (${e.calendar || ""})${e.copies ? `, on your calendars ${e.copies} times` : ""}`;
       b.addEventListener("click", () => (e.source === "proposed" && onProposal ? onProposal(e.action_id) : openEvent(e)));
       parts.push(b);
     });

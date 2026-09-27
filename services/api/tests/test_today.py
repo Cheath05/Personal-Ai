@@ -230,7 +230,7 @@ def test_today_endpoint_and_google_connect_flow(client):
     assert r.status_code == 302 and r.headers["location"].startswith("https://accounts.google.com/")
     state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
     r = client.get("/api/google/callback", params={"code": "c", "state": state}, follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"].endswith("#today")
+    assert r.status_code == 302 and r.headers["location"].endswith("#access")
     google = client.get("/api/today").json()["google"]
     assert google[0]["connected"] and google[0]["email"] == "w.alexbenton@gmail.com" and google[0]["gmail"]
 

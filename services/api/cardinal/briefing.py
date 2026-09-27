@@ -92,6 +92,13 @@ async def run_scheduler(state, settings) -> None:
     last_rollup_try: datetime | None = None
     last_inbox: datetime | None = None
     while True:
+        try:  # keep Today and the calendar's today/tomorrow warm, so opening the app never waits on Google
+            now = datetime.now(tz)
+            state.today.warm()
+            if state.today.calendar:
+                state.today.calendar.warm([now.date(), (now + timedelta(days=1)).date()])
+        except Exception:
+            log.exception("Warming Today failed")
         try:  # Relay sorts new mail every hour (only if an account is connected)
             now = datetime.now(tz)
             if last_inbox is None or now - last_inbox >= timedelta(hours=1):

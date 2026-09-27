@@ -219,7 +219,7 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Drafts: about 2 s each, and they read well.
   - Radix: a cited spacing-effect answer from Wikipedia and a university page in 9 s.
 - **Needs the user:**
-  - Today → Connections → **Reconnect** Personal Google to grant drafts. If Google refuses, add `gmail.compose` under Google Auth Platform → Data Access.
+  - Access → Accounts → **Reconnect** Personal Google to grant drafts. If Google refuses, add `gmail.compose` under Google Auth Platform → Data Access.
   - Review → Focus → Connect a laptop → Make a secret, then run the Mac installer. The G14 installer is for a Windows session.
 
 ## Phase 7 (built 27 Sep 2026): Hardening
@@ -255,9 +255,28 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Optionally, the Mac backup copy.
   - Complete Tailscale's SSH check in a browser if SSH asks again.
 
+## Faster, calmer Today (built 27 Sep 2026)
+
+- **Speed.** `/api/today` took 14.5 s on the hub because every source was fetched one request at a time: about 34 Google calls (the calendar list, then each calendar, then up to 16 emails one by one, per account), then calendar links, then Blackboard.
+  - Now `Google.events` and `Google.inbox` fetch in parallel (the access token is fetched once first).
+  - `Today.snapshot` and `Calendar.day` gather both accounts, every link and Blackboard at once.
+  - `Feed` keeps the parsed calendar with the download and parses in a thread (`asyncio.to_thread`).
+  - On a fake Google with 150 ms per call: the snapshot went from 5.8 s to 0.46 s, and a calendar day from 1.9 s to 0.31 s (`scratchpad bench_today.py`).
+- **Never waiting.** Both caches are stale-while-refresh: under 5 minutes (3 for the calendar) they're served as is. Up to 30 minutes, the old copy is served while a background task (its own DB session) fetches a new one. Older than that, the request waits.
+  - The scheduler calls `today.warm()` and `calendar.warm([today, tomorrow])` every 30 s, refreshing a bit before expiry.
+  - `Calendar.day` caches only the remote part (Google, links, Blackboard). Your own items and pending proposals are read from the DB on every call, so they're never stale.
+- **Declutter:**
+  - Today has a glance strip (Next up, Needs your OK, Due next, Email; tap to jump) and a one-line alert when a source fails.
+  - Approvals are one line each with Authorize / Deny; tap for the full preview. The panel is hidden when there's nothing to decide.
+  - The calendar has a one-week day strip around the chosen day. Identical events are drawn once, with ×N. "Suggest study time" is under the calendar.
+  - Inbox: one line per email (tap for Relay's reason and buttons), first 5 with "Show N more".
+  - An empty briefing is one line.
+  - Connections moved to Access, which now has tabs (Accounts, Alerts, Security, Brains, Activity; remembered per device). Google's sign-in now returns to `#access`.
+  - Phone Today: 4,318 → 2,926 px, even with an approval and an email expanded. Desktop: 2,696 → 1,844 px.
+
 ## Next
 
-- **Phase 1.6: voice.** Also consider: speeding up `/api/today`, and a Proxmox-level VM backup (vzdump to a USB drive or NAS) for the whole machine.
+- **Phase 1.6: voice.** Also consider a Proxmox-level VM backup (vzdump to a USB drive or NAS) for the whole machine.
 
 ## Things to keep in mind
 

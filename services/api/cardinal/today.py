@@ -5,6 +5,7 @@ to (their `access` list in agents.yaml). The allow-list is enforced here, not le
 """
 
 import asyncio
+import logging
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -12,12 +13,22 @@ from zoneinfo import ZoneInfo
 from sqlmodel import Session
 
 from .config import Settings
+from .db import get_engine
 from .sources.blackboard import Blackboard, BlackboardError
 from .sources.google import SLOTS, Google, GoogleError
 
+log = logging.getLogger("cardinal.today")
+
 CACHE_SECONDS = 300
+WARM_SECONDS = 240  # the scheduler refreshes a bit before the cache runs out
+MAX_STALE_SECONDS = 1800  # older than this, wait for fresh data instead of showing it
 CHAT_WAIT_SECONDS = 5.0
 ACCESS = ("calendar", "email", "blackboard")
+
+
+def _log_failure(task: asyncio.Task) -> None:
+    if not task.cancelled() and task.exception():
+        log.error("Background refresh failed", exc_info=task.exception())
 
 
 class Today:
@@ -27,52 +38,90 @@ class Today:
         self.blackboard = blackboard
         self.calendar = calendar  # adds your own Cardinal items and calendar links (iCloud etc.)
         self._cache: tuple[float, dict] | None = None
+        self._task: asyncio.Task | None = None
 
     @property
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.settings.timezone)
 
     async def snapshot(self, session: Session, force: bool = False, now: datetime | None = None) -> dict:
-        if not force and self._cache and time.time() - self._cache[0] < CACHE_SECONDS:
-            return self._cache[1]
+        """The day's data. A fresh copy is returned as is; a stale one (under 30 min) is returned at once while a
+        new one is fetched in the background, so opening Today never waits on Google. The scheduler keeps it warm."""
+        age = time.time() - self._cache[0] if self._cache else None
+        if not force and age is not None:
+            if age < CACHE_SECONDS:
+                return self._cache[1]
+            if age < MAX_STALE_SECONDS:
+                self.refresh_soon()
+                return self._cache[1]
+        return await self._build(session, now)
+
+    def warm(self) -> None:
+        """Called by the scheduler: refresh a little before the cache runs out."""
+        if not self._cache or time.time() - self._cache[0] > WARM_SECONDS:
+            self.refresh_soon()
+
+    def refresh_soon(self) -> None:
+        if self._task and not self._task.done():
+            return
+
+        async def run():
+            with Session(get_engine()) as s:
+                await self._build(s)
+        self._task = asyncio.create_task(run())
+        self._task.add_done_callback(_log_failure)
+
+    async def _build(self, session: Session, now: datetime | None = None) -> dict:
         tz = self.tz
         now = now or datetime.now(tz)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        sources, events, inboxes, due = [], [], [], []
+        window = (day_start, day_start + timedelta(days=2))
 
-        for slot, label in SLOTS.items():
+        async def account(slot: str, label: str):
             acct = self.google.account(session, slot)
             src = {"id": f"google:{slot}", "label": label, "kind": "google", "slot": slot,
                    "status": "not_connected", "detail": None}
-            if acct:
-                src.update(status="ok", detail=acct.email)
-                try:
-                    events += await self.google.events(session, acct, day_start, day_start + timedelta(days=2), tz)
-                    inboxes.append(await self.google.inbox(session, acct))
-                except GoogleError as e:
-                    src.update(status="error", detail=str(e))
-            sources.append(src)
+            if not acct:
+                return src, [], None
+            src.update(status="ok", detail=acct.email)
+            events, box = await asyncio.gather(self.google.events(session, acct, *window, tz),
+                                               self.google.inbox(session, acct), return_exceptions=True)
+            err = next((x for x in (events, box) if isinstance(x, BaseException)), None)
+            if err:
+                if not isinstance(err, GoogleError):
+                    raise err
+                src.update(status="error", detail=str(err))
+                return src, [], None
+            return src, events, box
 
-        if self.calendar:
-            window = (day_start, day_start + timedelta(days=2))
-            events += self.calendar.items_between(session, *window)
-            extra, _errors = await self.calendar.feeds_between(session, *window)
-            events += extra
+        async def own():  # your Cardinal items and calendar links (iCloud etc.)
+            if not self.calendar:
+                return [], None
+            extra, errors = await self.calendar.feeds_between(session, *window)
+            src = None
             if self.calendar.feeds(session):
-                sources.append({"id": "feeds", "label": "Calendar links", "kind": "feeds",
-                                "status": "error" if _errors else "ok",
-                                "detail": "; ".join(e["detail"] for e in _errors) or None})
-        events.sort(key=lambda e: e["start"])
+                src = {"id": "feeds", "label": "Calendar links", "kind": "feeds", "status": "error" if errors else "ok",
+                       "detail": "; ".join(e["detail"] for e in errors) or None}
+            return self.calendar.items_between(session, *window) + extra, src
 
-        bb = {"id": "blackboard", "label": "Blackboard", "kind": "blackboard", "status": "not_connected", "detail": None}
-        if self.blackboard.configured:
+        async def blackboard():
+            bb = {"id": "blackboard", "label": "Blackboard", "kind": "blackboard", "status": "not_connected", "detail": None}
+            if not self.blackboard.configured:
+                return bb, []
             try:
                 due = await self.blackboard.due(now, tz)
                 bb["status"] = "ok"
+                return bb, due
             except BlackboardError as e:
                 bb.update(status="error", detail=str(e))
-        sources.append(bb)
+                return bb, []
 
+        # Everything at once: both accounts, calendar links and Blackboard.
+        accounts, (own_events, feeds_src), (bb, due) = await asyncio.gather(
+            asyncio.gather(*(account(slot, label) for slot, label in SLOTS.items())), own(), blackboard())
+        sources = [a[0] for a in accounts] + ([feeds_src] if feeds_src else []) + [bb]
+        events = sorted([e for a in accounts for e in a[1]] + own_events, key=lambda e: e["start"])
+        inboxes = [a[2] for a in accounts if a[2]]
         snap = {"generated_at": now.isoformat(), "timezone": self.settings.timezone, "sources": sources,
                 "events": events, "due": due, "inbox": inboxes}
         self._cache = (time.time(), snap)

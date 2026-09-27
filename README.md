@@ -117,7 +117,7 @@ ssh -t usr1@cardinal '~/Personal-Ai/infra/set-secret.sh'
 
 It asks for the Client ID, the Client secret and your Blackboard calendar link, with hidden typing, so they never show on screen or in chat. Press Enter to skip any of them. The Blackboard link is at **Blackboard → Calendar → settings → Get external calendar link**.
 
-**3. Connect.** Open Cardinal → **Today** → **Connect** next to Personal Google, then UMBC Google.
+**3. Connect.** Open Cardinal → **Access** → **Accounts** → **Connect** next to Personal Google, then UMBC Google.
 
 - Google may say "Google hasn't verified this app". That's expected, because you're its developer. Choose **Continue**, or **Advanced → Go to Cardinal**.
 - Leave both boxes (Calendar and Gmail) ticked.

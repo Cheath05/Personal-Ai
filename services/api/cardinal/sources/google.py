@@ -5,6 +5,7 @@ creates itself (the calendar.app.created scope can't touch any other calendar). 
 over httpx; tokens are encrypted by the Vault before they reach the database.
 """
 
+import asyncio
 import secrets
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -228,31 +229,30 @@ class Google:
     async def events(self, session: Session, acct: GoogleAccount, start: datetime, end: datetime,
                      tz: ZoneInfo) -> list[dict]:
         cals = await self._get(session, acct, f"{CAL}/users/me/calendarList", {"minAccessRole": "reader"})
-        out = []
         chosen = [c for c in cals.get("items", []) if (c.get("selected") or c.get("primary"))
                   and c["id"] != acct.cardinal_calendar_id]
-        for cal in chosen[:10]:
+
+        async def one(cal: dict) -> list[dict]:
             data = await self._get(session, acct, f"{CAL}/calendars/{quote(cal['id'], safe='')}/events", {
                 "timeMin": start.isoformat(), "timeMax": end.isoformat(), "singleEvents": "true",
                 "orderBy": "startTime", "maxResults": 50})
             name = cal.get("summaryOverride") or cal.get("summary") or "Calendar"
             color = cal.get("backgroundColor")
-            out += [e for e in (parse_event(i, name, acct.slot, tz, color) for i in data.get("items", [])) if e]
-        return sorted(out, key=lambda e: e["start"])
+            return [e for e in (parse_event(i, name, acct.slot, tz, color) for i in data.get("items", [])) if e]
+
+        # All calendars at once: one at a time was most of the Today view's wait.
+        per_cal = await asyncio.gather(*(one(c) for c in chosen[:10]))
+        return sorted((e for evs in per_cal for e in evs), key=lambda e: e["start"])
 
     async def inbox(self, session: Session, acct: GoogleAccount, limit: int = 8) -> dict:
-        label = await self._get(session, acct, f"{GMAIL}/labels/INBOX")
-        listing = await self._get(session, acct, f"{GMAIL}/messages",
-                                  {"q": "in:inbox is:unread newer_than:2d", "maxResults": limit * 2})
-        recent = []
-        for m in listing.get("messages", []):
-            msg = await self._get(session, acct, f"{GMAIL}/messages/{m['id']}", [
-                ("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject")])
-            parsed = parse_message(msg)
-            if not parsed["noise"]:
-                recent.append(parsed)
-            if len(recent) >= limit:
-                break
+        await self._access_token(session, acct)  # once, before the parallel requests below share it
+        label, listing = await asyncio.gather(
+            self._get(session, acct, f"{GMAIL}/labels/INBOX"),
+            self._get(session, acct, f"{GMAIL}/messages", {"q": "in:inbox is:unread newer_than:2d", "maxResults": limit * 2}))
+        msgs = await asyncio.gather(*(self._get(session, acct, f"{GMAIL}/messages/{m['id']}", [
+            ("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject")])
+            for m in listing.get("messages", [])))
+        recent = [p for p in (parse_message(m) for m in msgs) if not p["noise"]][:limit]
         return {"account": acct.slot, "email": acct.email, "unread": int(label.get("messagesUnread", 0)),
                 "recent": recent}
 

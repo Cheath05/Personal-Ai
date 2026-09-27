@@ -89,7 +89,14 @@
 
     <!-- ================= TODAY ================= -->
     <main class="view" id="v-today" hidden>
-      <div class="vhead"><div><h1>Today</h1><p>Your calendar, both inboxes, Blackboard deadlines and the morning briefing.</p></div><span class="who">ORDINAL [ORD1-2071]</span></div>
+      <div class="vhead"><div><h1>Today</h1><p id="today-line">Your day at a glance.</p></div><span class="who">ORDINAL [ORD1-2071]</span></div>
+      <nav class="glance" aria-label="At a glance">
+        <button type="button" class="g-tile" id="g-next" data-go="cal-panel"><span>Next up</span><b>–</b><small></small></button>
+        <button type="button" class="g-tile" id="g-ok" data-go="ok-panel"><span>Needs your OK</span><b>–</b><small></small></button>
+        <button type="button" class="g-tile" id="g-due" data-go="due-panel"><span>Due next</span><b>–</b><small></small></button>
+        <button type="button" class="g-tile" id="g-mail" data-go="inbox-panel"><span>Email</span><b>–</b><small></small></button>
+      </nav>
+      <div class="today-alerts" id="today-alerts" hidden></div>
       <div class="grid two today">
         <section class="panel neon span-all">
           <div class="ph"><span class="t">Briefing</span><span class="m" id="brief-meta">–</span></div>
@@ -99,16 +106,12 @@
             <span class="note small" id="brief-note"></span>
           </div>
         </section>
-        <section class="panel span-all ok-panel" id="ok-panel">
+        <section class="panel span-all ok-panel" id="ok-panel" hidden>
           <div class="ph"><span class="t">Needs your OK</span><span class="m" id="ok-meta">ACTION PREVIEWS</span></div>
           <div class="ok-list" id="ok-list"></div>
           <div class="sigma" id="sigma" hidden></div>
-          <div class="row-actions">
-            <button type="button" class="btn" id="plan-now">Suggest study time</button>
-            <span class="note small" id="plan-note">Axiom checks your due dates every morning and proposes study blocks. Nothing is added until you say so.</span>
-          </div>
         </section>
-        <section class="panel span-all cal-panel">
+        <section class="panel span-all cal-panel" id="cal-panel">
           <div class="ph"><span class="t">Calendar</span><span class="m" id="cal-meta">–</span></div>
           <div class="cal-bar">
             <button type="button" class="icon-btn" id="cal-prev" aria-label="Previous day">‹</button>
@@ -122,13 +125,17 @@
           <div class="cal-strip" id="cal-strip" role="tablist" aria-label="Days"></div>
           <div class="cal-allday" id="cal-allday"></div>
           <div class="cal-scroll" id="cal-scroll"><div class="cal-grid" id="cal-grid"></div></div>
-          <p class="note small" id="cal-note"></p>
+          <div class="cal-foot">
+            <button type="button" class="linkish" id="plan-now">Suggest study time</button>
+            <span class="note small" id="plan-note"></span>
+            <span class="note small" id="cal-note"></span>
+          </div>
         </section>
-        <section class="panel">
+        <section class="panel" id="due-panel">
           <div class="ph"><span class="t">Due soon</span><span class="m">BLACKBOARD · 7 DAYS</span></div>
           <ul class="list agenda" id="due-list"></ul>
         </section>
-        <section class="panel inbox-panel">
+        <section class="panel inbox-panel" id="inbox-panel">
           <div class="ph"><span class="t">Inbox</span><span class="m" id="ib-meta">SORTED BY RELAY</span></div>
           <div class="ib-bar">
             <div class="seg" role="tablist" id="ib-tabs">
@@ -136,24 +143,10 @@
               <button type="button" data-cat="fyi" aria-selected="false">FYI</button>
               <button type="button" data-cat="noise" aria-selected="false">Noise</button>
             </div>
-            <button type="button" class="btn" id="ib-sort">Sort now</button>
+            <button type="button" class="linkish" id="ib-sort">Sort now</button>
           </div>
           <p class="note small" id="ib-note"></p>
           <ul class="list ib-list" id="inbox-list"></ul>
-        </section>
-        <section class="panel">
-          <div class="ph"><span class="t">Connections</span><span class="m">WHAT CARDINAL READS</span></div>
-          <ul class="list" id="conn-list"></ul>
-          <p class="note small">Cardinal reads your calendars and inboxes. The only thing it writes is its own "Cardinal" calendar, and only with items you add or confirm.</p>
-          <details class="feeds">
-            <summary>Add an Apple (iCloud) or other calendar</summary>
-            <p class="note small">On iPhone: <b>Calendar</b> → <b>Calendars</b> → ⓘ next to the calendar → turn on <b>Public Calendar</b> → <b>Share Link</b>, and paste it here. Anyone with the link can see that calendar, so only share one you're fine with that for.</p>
-            <form id="feed-form" class="feed-form">
-              <input name="name" maxlength="40" placeholder="Name, e.g. iCloud" required>
-              <input name="url" placeholder="webcal://…" required>
-              <button type="submit" class="btn">Add</button>
-            </form>
-          </details>
         </section>
       </div>
     </main>
@@ -413,18 +406,39 @@
 
     <!-- ================= ACCESS ================= -->
     <main class="view" id="v-access" hidden>
-      <div class="vhead"><div><h1>Access</h1><p>Where the brains run, what they cost, and what agents may touch.</p></div><span class="who">SYSTEM</span></div>
-      <div class="grid two">
-        <section class="panel neon">
+      <div class="vhead"><div><h1>Access</h1><p>Your accounts, alerts, security, the brains, and everything agents did.</p></div><span class="who">SYSTEM</span></div>
+      <div class="seg access-tabs" role="tablist" id="access-tabs">
+        <button type="button" role="tab" data-tab="accounts" aria-selected="true">Accounts</button>
+        <button type="button" role="tab" data-tab="alerts" aria-selected="false">Alerts</button>
+        <button type="button" role="tab" data-tab="security" aria-selected="false">Security</button>
+        <button type="button" role="tab" data-tab="brains" aria-selected="false">Brains</button>
+        <button type="button" role="tab" data-tab="activity" aria-selected="false">Activity</button>
+      </div>
+      <div class="grid two access-grid">
+        <section class="panel" data-tab="accounts">
+          <div class="ph"><span class="t">Connections</span><span class="m">WHAT CARDINAL READS</span></div>
+          <ul class="list" id="conn-list"></ul>
+          <p class="note small">Cardinal reads your calendars and inboxes. The only thing it writes is its own "Cardinal" calendar, and only with items you add or confirm.</p>
+          <details class="feeds">
+            <summary>Add an Apple (iCloud) or other calendar</summary>
+            <p class="note small">On iPhone: <b>Calendar</b> → <b>Calendars</b> → ⓘ next to the calendar → turn on <b>Public Calendar</b> → <b>Share Link</b>, and paste it here. Anyone with the link can see that calendar, so only share one you're fine with that for.</p>
+            <form id="feed-form" class="feed-form">
+              <input name="name" maxlength="40" placeholder="Name, e.g. iCloud" required>
+              <input name="url" placeholder="webcal://…" required>
+              <button type="submit" class="btn">Add</button>
+            </form>
+          </details>
+        </section>
+        <section data-tab="brains" class="panel neon">
           <div class="ph"><span class="t">Brains</span><span class="m" id="brains-mode">–</span></div>
           <ul class="list" id="brains-list"></ul>
           <p class="note small">Local brains are Ollama servers listed in <code>services/api/config/brains.yaml</code>.</p>
         </section>
-        <section class="panel">
+        <section data-tab="brains" class="panel">
           <div class="ph"><span class="t">Usage this month</span><span class="m" id="usage-month">–</span></div>
           <div id="usage-full"></div>
         </section>
-        <section class="panel sec-panel">
+        <section data-tab="security" class="panel sec-panel">
           <div class="ph"><span class="t">Security</span><span class="m" id="sec-meta">PASSKEY LOCK</span></div>
           <div class="sec-state" id="sec-state"></div>
           <div class="row-actions" id="sec-actions"></div>
@@ -435,7 +449,7 @@
           <ul class="list" id="sec-sessions"></ul>
           <div class="sec-code" id="sec-code" hidden></div>
         </section>
-        <section class="panel">
+        <section data-tab="alerts" class="panel">
           <div class="ph"><span class="t">Notifications</span><span class="m" id="nt-meta">–</span></div>
           <div class="row-actions" id="nt-actions"></div>
           <p class="note small" id="nt-note"></p>
@@ -449,7 +463,7 @@
           <p class="fo-h">Devices</p>
           <ul class="list" id="nt-devices"></ul>
         </section>
-        <section class="panel">
+        <section data-tab="security" class="panel">
           <div class="ph"><span class="t">Backups</span><span class="m" id="bk-meta">–</span></div>
           <div class="bk-state" id="bk-state"></div>
           <div class="row-actions"><button type="button" class="btn" id="bk-drill">Test a restore now</button><span class="note small" id="bk-note"></span></div>
@@ -464,12 +478,12 @@
             </ol>
           </details>
         </section>
-        <section class="panel">
+        <section data-tab="activity" class="panel">
           <div class="ph"><span class="t">Trust rules</span><span class="m">REMEMBERED APPROVALS</span></div>
           <ul class="list" id="rules-list"></ul>
           <p class="note small">A rule lets one agent do one narrow kind of change without asking. You still get a note with Undo. Unused rules expire after 60 days. Sending messages, deleting, payments and security settings always ask.</p>
         </section>
-        <section class="panel">
+        <section data-tab="accounts" class="panel">
           <div class="ph"><span class="t">Never accessed</span><span class="m">LOCKED IN CODE</span></div>
           <ul class="never">
             <li><span>Messages and call history</span><span class="tag bad">Locked</span></li>
@@ -479,7 +493,7 @@
             <li><span>Keystrokes and screenshots</span><span class="tag bad">Locked</span></li>
           </ul>
         </section>
-        <section class="panel span-all">
+        <section data-tab="activity" class="panel span-all">
           <div class="ph"><span class="t">Activity log</span><span class="m">EVERY CHANGE, WHO AND WHY</span></div>
           <ul class="list log" id="log-list"></ul>
         </section>

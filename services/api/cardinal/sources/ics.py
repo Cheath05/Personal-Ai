@@ -3,6 +3,7 @@
 Repeating events (a weekly class, say) are expanded, so a feed can be read for any day.
 """
 
+import asyncio
 import time
 from datetime import date, datetime
 
@@ -24,12 +25,16 @@ def _as_dt(value, tz, end_of_day: bool = False) -> tuple[datetime, bool]:
     return datetime.combine(value, t, tz), True
 
 
-def events_between(ics: str | bytes, start: datetime, end: datetime, tz) -> list[dict]:
-    """Every event overlapping [start, end), with repeats expanded."""
+def parse(ics: str | bytes) -> Calendar:
     try:
-        cal = Calendar.from_ical(ics)
+        return Calendar.from_ical(ics)
     except ValueError as e:
         raise FeedError("That link didn't return a calendar.") from e
+
+
+def events_between(ics: str | bytes | Calendar, start: datetime, end: datetime, tz) -> list[dict]:
+    """Every event overlapping [start, end), with repeats expanded."""
+    cal = ics if isinstance(ics, Calendar) else parse(ics)
     try:
         found = recurring_ical_events.of(cal).between(start, end)
     except Exception as e:  # malformed repeat rules shouldn't take the whole view down
@@ -50,12 +55,13 @@ def events_between(ics: str | bytes, start: datetime, end: datetime, tz) -> list
 
 
 class Feed:
-    """Fetches a calendar link, keeping the result for 30 minutes."""
+    """Fetches a calendar link, keeping the result (downloaded and parsed) for 30 minutes."""
 
     def __init__(self, url: str | None, client: httpx.AsyncClient | None = None):
         self.url = url.replace("webcal://", "https://", 1) if url else None
         self.client = client or httpx.AsyncClient(timeout=15.0, follow_redirects=True)
         self._cache: tuple[float, bytes] | None = None
+        self._parsed: tuple[bytes, Calendar] | None = None
 
     @property
     def configured(self) -> bool:
@@ -74,8 +80,15 @@ class Feed:
             self._cache = (time.time(), r.content)
         return self._cache[1]
 
+    async def calendar(self) -> Calendar:
+        """Parsed once per download (a Blackboard feed is big), and off the event loop."""
+        raw = await self.fetch()
+        if not self._parsed or self._parsed[0] is not raw:
+            self._parsed = (raw, await asyncio.to_thread(parse, raw))
+        return self._parsed[1]
+
     async def between(self, start: datetime, end: datetime, tz) -> list[dict]:
-        return events_between(await self.fetch(), start, end, tz)
+        return await asyncio.to_thread(events_between, await self.calendar(), start, end, tz)
 
 
 def day_bounds(d: date, tz) -> tuple[datetime, datetime]:

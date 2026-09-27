@@ -239,3 +239,29 @@ async def test_added_item_is_complete_after_the_google_copy(gsettings, tmp_path,
     await connect(today, session)
     item, _ = await today.calendar.add(session, title="Gym", day=today.calendar.today(), start="07:00")
     assert item.model_dump()["title"] == "Gym" and item.model_dump()["google_event_id"]
+
+
+async def test_views_answer_from_cache_and_refresh_in_the_background(gsettings, tmp_path, session):  # noqa: F811
+    import time as _time
+    calls = []
+    today = make_today(gsettings, tmp_path, calls)
+    cal = today.calendar
+    await connect(today, session)
+    cal.today = lambda: date(2026, 9, 27)
+    d = date(2026, 9, 28)
+    await cal.day(session, d)
+    snap = await today.snapshot(session)
+    n = len(calls)
+    # Stale, but under 30 minutes old: the old copy comes back at once, a new one is fetched behind it.
+    cal._cache[d.isoformat()] = (_time.time() - 600, cal._cache[d.isoformat()][1])
+    today._cache = (_time.time() - 600, snap)
+    assert await today.snapshot(session) is snap and len(calls) == n
+    await cal.day(session, d)
+    await today._task
+    await cal._tasks[d.isoformat()]
+    assert len(calls) > n and _time.time() - today._cache[0] < 5 and _time.time() - cal._cache[d.isoformat()][0] < 5
+    # Your own items are never stale: added after caching, they show up without a refresh.
+    await cal.add(session, title="Office hours", day=d, start="14:00", end="15:00", kind="event")
+    assert "Office hours" in [e["title"] for e in (await cal.day(session, d))["events"]]
+    today.warm()  # fresh: nothing to do
+    assert today._task.done()

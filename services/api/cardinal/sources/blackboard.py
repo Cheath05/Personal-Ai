@@ -3,6 +3,7 @@
 The feed URL works without a login, so it's kept in the hub's .env and never shown in the app.
 """
 
+import asyncio
 import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -27,7 +28,7 @@ def to_due(ev: dict) -> dict:
             "course": found.group(1) if found else None}
 
 
-def parse_due(ics: str | bytes, now: datetime, days: int, tz: ZoneInfo) -> list[dict]:
+def parse_due(ics, now: datetime, days: int, tz: ZoneInfo) -> list[dict]:  # raw .ics or a parsed Calendar
     try:
         evs = events_between(ics, now.replace(hour=0, minute=0, second=0, microsecond=0), now + timedelta(days=days), tz)
     except FeedError as e:
@@ -48,23 +49,25 @@ class Blackboard:
     def configured(self) -> bool:
         return self.feed.configured
 
-    async def _ics(self) -> bytes:
+    async def _ics(self):
         try:
-            return await self.feed.fetch()
+            return await self.feed.calendar()
         except FeedError as e:
-            raise BlackboardError(str(e).replace("calendar link", "Blackboard feed")) from e
+            msg = "The Blackboard link didn't return a calendar." if "didn't return" in str(e) else str(e)
+            raise BlackboardError(msg.replace("calendar link", "Blackboard feed")) from e
 
     async def due(self, now: datetime, tz: ZoneInfo, days: int = 7) -> list[dict]:
         if not self.configured:
             return []
-        return parse_due(await self._ics(), now, days, tz)
+        return await asyncio.to_thread(parse_due, await self._ics(), now, days, tz)
 
     async def between(self, start: datetime, end: datetime, tz: ZoneInfo) -> list[dict]:
         """Due items in [start, end), e.g. one day of the calendar view."""
         if not self.configured:
             return []
+        cal = await self._ics()
         try:
-            evs = events_between(await self._ics(), start, end, tz)
+            evs = await asyncio.to_thread(events_between, cal, start, end, tz)
         except FeedError as e:
             raise BlackboardError(str(e)) from e
         return [to_due(e) for e in evs]

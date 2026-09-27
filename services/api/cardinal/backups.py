@@ -92,7 +92,7 @@ def drill(live_db: Path, folder: Path | None = None, key_file: Path | None = Non
             out["notes"].append("Google sign-ins in the backup open with this hub's key.")
         except (OSError, InvalidToken, ValueError):
             out["notes"].append("Google sign-ins in the backup don't open with this hub's key: after a restore, "
-                                "reconnect Google on Today.")
+                                "reconnect Google in Access → Accounts.")
     files = data_dir() / "files"
     if files.is_dir() and any(files.iterdir()):
         saved = (folder or backup_dir()) / "files"

@@ -1,5 +1,5 @@
 // Service worker: Cardinal installs as an app (network first, cached shell as fallback) and shows notifications.
-const CACHE = "cardinal-shell-v12";
+const CACHE = "cardinal-shell-v13";
 const SHELL = ["/", "/css/app.css", "/js/app.js", "/js/nexus.js", "/js/api.js", "/js/calendar.js", "/js/actions.js", "/js/review.js", "/js/running.js", "/js/brain.js", "/js/workforce.js", "/js/security.js", "/manifest.webmanifest", "/icons/icon.svg"];
 
 self.addEventListener("install", (e) => {

@@ -249,7 +249,7 @@ def _gmail(svc: "Actions", session: Session, p: dict):
     google = svc.calendar.google
     acct = google.account(session, p.get("account", "personal"))
     if not google.can_draft(acct):
-        raise ActionError("Gmail drafts aren't allowed yet. Reconnect that Google account on Today to allow them.")
+        raise ActionError("Gmail drafts aren't allowed yet. Reconnect that Google account in Access → Accounts to allow them.")
     return google, acct
 
 

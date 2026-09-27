@@ -43,17 +43,7 @@ export function createActions({ toast, agentColor, onChange }) {
     const deny = el("button", "btn danger", "Deny");
     [approve, always, deny].forEach((b) => { b.type = "button"; });
     const busy = (on) => [approve, always, deny].forEach((b) => { b.disabled = on; });
-    approve.addEventListener("click", async () => {
-      busy(true);
-      try {
-        const r = await api.approve(a.id);
-        $("act-dialog").close();
-        if (r.action.status === "failed") toast(`Couldn't do it: ${r.action.error}`);
-        if (r.suggestion) showSigma(r.suggestion);
-        opts.onDone?.(r.action.status === "executed" ? `✓ Authorized: ${a.title}` : `✗ Failed: ${r.action.error}`);
-        await afterChange(r.action.status === "executed" ? "Done. It's on your calendar." : null);
-      } catch (e) { toast(e.message); busy(false); }
-    });
+    approve.addEventListener("click", () => authorize(a, opts, busy));
     always.addEventListener("click", async () => {
       busy(true);
       try {
@@ -67,15 +57,56 @@ export function createActions({ toast, agentColor, onChange }) {
         $("rule-dialog").showModal();
       } catch (e) { toast(e.message); busy(false); }
     });
-    deny.addEventListener("click", async () => {
-      busy(true);
-      try { await api.deny(a.id); $("act-dialog").close(); opts.onDone?.(`Denied: ${a.title}`); await afterChange(`Denied. ${a.agent} won't suggest this one again.`); }
-      catch (e) { toast(e.message); busy(false); }
-    });
+    deny.addEventListener("click", () => refuse(a, opts, busy));
     if (a.always_ask) always.hidden = true;
     btns.append(approve, always, deny);
     c.append(btns);
     return c;
+  }
+
+  async function authorize(a, opts, busy) {
+    busy(true);
+    try {
+      const r = await api.approve(a.id);
+      $("act-dialog").close();
+      if (r.action.status === "failed") toast(`Couldn't do it: ${r.action.error}`);
+      if (r.suggestion) showSigma(r.suggestion);
+      opts.onDone?.(r.action.status === "executed" ? `✓ Authorized: ${a.title}` : `✗ Failed: ${r.action.error}`);
+      await afterChange(r.action.status === "executed" ? "Done. It's on your calendar." : null);
+    } catch (e) { toast(e.message); busy(false); }
+  }
+
+  async function refuse(a, opts, busy) {
+    busy(true);
+    try { await api.deny(a.id); $("act-dialog").close(); opts.onDone?.(`Denied: ${a.title}`); await afterChange(`Denied. ${a.agent} won't suggest this one again.`); }
+    catch (e) { toast(e.message); busy(false); }
+  }
+
+  // ---------- One line on Today: what and when, with Authorize / Deny; tap for the full preview ----------
+  function row(a) {
+    const r = el("div", "act-row");
+    r.style.setProperty("--ag", agentColor(a.agent_id));
+    const main = el("button", "act-row-main");
+    main.type = "button";
+    main.setAttribute("aria-expanded", "false");
+    const after = (a.preview.after || a.preview.change || "").split(" · ").slice(0, 2).join(" · ");
+    main.append(el("span", "act-dot"), el("span", "act-row-t", a.title), el("span", "act-row-s", `${a.agent}${after ? ` · ${after}` : ""}`));
+    const ok = el("button", "btn primary", "Authorize");
+    const no = el("button", "btn danger", "Deny");
+    [ok, no].forEach((b) => { b.type = "button"; });
+    const busy = (on) => [ok, no].forEach((b) => { b.disabled = on; });
+    ok.addEventListener("click", () => authorize(a, {}, busy));
+    no.addEventListener("click", () => refuse(a, {}, busy));
+    const btns = el("div", "act-row-btns");
+    btns.append(ok, no);
+    let full = null;
+    main.addEventListener("click", () => {
+      if (full) { full.remove(); full = null; } else { full = card(a); r.append(full); }
+      main.setAttribute("aria-expanded", String(!!full));
+      btns.hidden = !!full;  // the full card has its own buttons
+    });
+    r.append(main, btns);
+    return r;
   }
 
   $("rule-yes").addEventListener("click", async () => {
@@ -102,17 +133,18 @@ export function createActions({ toast, agentColor, onChange }) {
       try { await api.remember(s.action_id); box.hidden = true; await afterChange("Rule saved. See it in Access → Trust rules."); }
       catch (e) { toast(e.message); }
     });
-    no.addEventListener("click", () => { box.hidden = true; });
+    no.addEventListener("click", () => { box.hidden = true; renderPanel(); });
     const row = el("div", "row-actions");
     row.append(yes, no);
     box.append(row);
     box.hidden = false;
+    $("ok-panel").hidden = false;
   }
 
   // ---------- Today panel + top chip ----------
   function renderPanel() {
     const list = $("ok-list");
-    const items = st.pending.map((a) => card(a));
+    const items = st.pending.map((a) => row(a));
     st.auto.forEach((a) => {
       const done = el("div", "auto-note");
       done.append(el("span", null, `✓ ${a.title} · ${a.preview.after?.split(" · ").slice(0, 2).join(" · ") || ""} (trust rule #${a.rule_id})`));
@@ -124,8 +156,13 @@ export function createActions({ toast, agentColor, onChange }) {
       }
       items.push(done);
     });
-    list.replaceChildren(...(items.length ? items : [el("p", "note", "Nothing waiting for you.")]));
-    $("ok-meta").textContent = st.pending.length ? `${st.pending.length} WAITING` : "ACTION PREVIEWS";
+    list.replaceChildren(...items);
+    $("ok-panel").hidden = !items.length && $("sigma").hidden;  // nothing to decide: no panel
+    $("ok-meta").textContent = st.pending.length ? `${st.pending.length} WAITING · TAP ONE FOR DETAILS` : "DONE BY YOUR RULES";
+    const g = $("g-ok");
+    g.querySelector("b").textContent = st.pending.length ? `${st.pending.length} waiting` : "All clear";
+    g.querySelector("small").textContent = st.pending.length ? st.pending[0].title : "Nothing to approve";
+    g.dataset.tone = "";
     const chip = $("ok-chip");
     chip.hidden = !st.pending.length;
     chip.textContent = `${st.pending.length} to OK`;

@@ -43,7 +43,15 @@ function twoTap(btn, run) {
   return disarm;
 }
 
+function glance(id, value, sub, tone = "") {  // a tile in Today's glance strip
+  const t = document.getElementById(id);
+  t.querySelector("b").textContent = value;
+  t.querySelector("small").textContent = sub || "";
+  t.dataset.tone = tone;
+}
+
 /* ---------- Inbox ---------- */
+const INBOX_SHOWN = 5;
 const CAT = { urgent: ["Urgent", "bad"], reply: ["Needs reply", "warn"], fyi: ["FYI", ""], noise: ["Noise", ""] };
 const TABS = { todo: ["urgent", "reply"], fyi: ["fyi"], noise: ["noise"] };
 const tabOf = (item) => Object.keys(TABS).find((t) => TABS[t].includes(item.category)) || "fyi";
@@ -52,7 +60,7 @@ const tabOf = (item) => Object.keys(TABS).find((t) => TABS[t].includes(item.cate
 const SERIES = [["focus", "Focus", "#199e70"], ["neutral", "Other", "#3987e5"], ["distraction", "Distraction", "#d95926"]];
 
 export function createWorkforce({ toast, onChange }) {
-  const ib = { data: null, tab: "todo" };
+  const ib = { data: null, tab: "todo", all: false, open: new Set() };
   const fo = { data: null, table: false };
 
   async function refreshInbox() {
@@ -78,10 +86,15 @@ export function createWorkforce({ toast, onChange }) {
     $("ib-meta").textContent = d.last_sorted ? `SORTED ${hhmm(new Date(d.last_sorted))} · RELAY` : "NOT SORTED YET";
     $("ib-sort").disabled = !connected.length;
     $("ib-note").textContent = !connected.length
-      ? "Connect Google under Connections, and Relay sorts your mail every hour."
+      ? "Connect Google in Access → Accounts, and Relay sorts your mail every hour."
       : !connected.some((a) => a.can_draft)
-        ? "Relay can sort your mail. To let it save reply drafts and send (only when you press Send), press Reconnect under Connections."
+        ? "Relay can sort your mail. To let it save reply drafts and send (only when you press Send), press Reconnect in Access → Accounts."
         : "";
+    const urgent = d.items.filter((i) => i.category === "urgent").length;
+    const reply = d.items.filter((i) => i.category === "reply").length;
+    if (!connected.length) glance("g-mail", "Not connected", "Access → Accounts");
+    else if (!counts.todo) glance("g-mail", "All clear", d.last_sorted ? `Sorted ${hhmm(new Date(d.last_sorted))}` : "Not sorted yet");
+    else glance("g-mail", `${counts.todo} need you`, [urgent && `${urgent} urgent`, reply && `${reply} to answer`].filter(Boolean).join(" · "), urgent ? "soon" : "");
 
     const list = $("inbox-list");
     const items = d.items.filter((i) => tabOf(i) === ib.tab);
@@ -92,23 +105,40 @@ export function createWorkforce({ toast, onChange }) {
       list.replaceChildren(el("li", "empty-row", empty));
       return;
     }
-    list.replaceChildren(...items.map(itemRow));
+    const shown = ib.all ? items : items.slice(0, INBOX_SHOWN);
+    const rows = shown.map(itemRow);
+    if (items.length > shown.length || ib.all && items.length > INBOX_SHOWN) {
+      const li = el("li", "ib-more");
+      li.append(button("linkish", ib.all ? "Show fewer" : `Show ${items.length - shown.length} more`, () => { ib.all = !ib.all; renderInbox(); }));
+      rows.push(li);
+    }
+    list.replaceChildren(...rows);
   }
 
+  // One line per email; tap it for Relay's reason, the to-do and date it found, and the buttons.
   function itemRow(item) {
     const li = el("li", "ib-item");
-    const top = el("div", "ib-top");
     const [catName, catCls] = CAT[item.category] || CAT.fyi;
-    if (item.category === "urgent" || item.category === "reply") top.append(el("span", `tag ${catCls}`, catName));
+    const head = button("ib-head", "", () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      head.setAttribute("aria-expanded", String(open));
+      if (open) ib.open.add(item.id); else ib.open.delete(item.id);
+    });
     const many = ib.data.accounts.filter((a) => a.connected).length > 1; // name the inbox only when there are two
-    top.append(el("span", "sub", [item.sender, when(item.received_at), many && item.account_label].filter(Boolean).join(" · ")));
-    li.append(top, el("b", "ib-subj", item.subject || "(no subject)"));
-    if (item.reason) li.append(el("p", "ib-why", item.reason));
+    head.append(el("span", `tag ${catCls} ib-cat`, item.category === "reply" ? "Reply" : catName),
+      el("span", "ib-from", item.sender), el("span", "ib-subj", item.subject || "(no subject)"),
+      el("span", "ib-when", [when(item.received_at), many && item.account_label].filter(Boolean).join(" · ")));
+    const body = el("div", "ib-body");
+    body.hidden = !ib.open.has(item.id);
+    head.setAttribute("aria-expanded", String(!body.hidden));
+    li.append(head, body);
+    if (item.reason) body.append(el("p", "ib-why", item.reason));
     const chips = el("div", "ib-chips");
     if (item.task) chips.append(el("span", "ib-chip", `To do: ${item.task}`));
     if (item.due) chips.append(el("span", "ib-chip", `Date: ${item.due}`));
     if (item.draft_action_id) chips.append(el("span", "ib-chip", "Draft saved in Gmail"));
-    if (chips.childElementCount) li.append(chips);
+    if (chips.childElementCount) body.append(chips);
 
     const acts = el("div", "ib-acts");
     if (item.category !== "noise") acts.append(button("linkish", "Reply", () => openReply(item)));
@@ -135,12 +165,13 @@ export function createWorkforce({ toast, onChange }) {
         renderInbox();
       } catch (err) { toast(err.message); }
     }));
-    li.append(acts);
+    body.append(acts);
     return li;
   }
 
   document.querySelectorAll("#ib-tabs button").forEach((b) => b.addEventListener("click", () => {
     ib.tab = b.dataset.cat;
+    ib.all = false;
     if (ib.data) renderInbox();
   }));
 
@@ -178,7 +209,7 @@ export function createWorkforce({ toast, onChange }) {
     const ok = canDraft(item.account);
     $("mail-save").disabled = !ok;
     $("mail-send").disabled = !ok;
-    $("mail-note").textContent = ok ? "" : "Reconnect Google under Connections to allow drafts and sending.";
+    $("mail-note").textContent = ok ? "" : "Reconnect Google in Access → Accounts to allow drafts and sending.";
     dlg.showModal();
     form.instructions.focus();
   }
