@@ -165,3 +165,12 @@ def test_each_run_counts_for_one_session_only():
     got = running.match_runs(planned, runs)
     assert [[r["id"] for r in m] for m in got] == [[1], [2], [3]]  # Saturday's run counts for Sunday
     assert running.match_runs(planned, [{"id": 9, "date": "2026-09-22"}])[1] == []  # Tuesday's run isn't Wednesday's too
+
+
+def test_schedule_lines_answer_do_i_run_tomorrow(session):
+    running.plan_start(session, SUN.date())  # week 1 starts Mon 28 Sep
+    lines = running.schedule_lines(session, SUN)
+    assert lines[0] == "Today (Sun 27 Sep): rest day, no run planned."
+    assert lines[1] == "Tomorrow (Mon 28 Sep): rest day, no run planned."
+    assert "Tue 29 Sep: Intervals 6 × 400 m, hard (quality day), not on the calendar yet" in lines[2]
+    assert "Wed 30 Sep: Easy 2 mi, easy" in lines[2]

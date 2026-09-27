@@ -12,7 +12,7 @@ from cardinal.calendar import Calendar
 from cardinal.config import Settings
 from cardinal.db import GoogleAccount
 from cardinal.sources.blackboard import Blackboard, parse_due
-from cardinal.sources.google import SCOPE_APP_CALENDAR, SCOPE_CALENDAR, SCOPE_GMAIL, Google, parse_event
+from cardinal.sources.google import SCOPE_APP_CALENDAR, SCOPE_CALENDAR, SCOPE_COMPOSE, SCOPE_GMAIL, Google, parse_event
 from cardinal.today import ACCESS, Today, context_text
 from cardinal.vault import Vault
 
@@ -117,7 +117,7 @@ def test_auth_url_asks_for_read_scopes_plus_own_calendar_only(today):
     q = parse_qs(urlparse(today.google.auth_url("personal")).query)
     assert q["redirect_uri"] == ["https://cardinal.example.ts.net/api/google/callback"]
     assert q["access_type"] == ["offline"] and q["prompt"] == ["consent"]
-    assert set(q["scope"][0].split()) == {"openid", "email", SCOPE_CALENDAR, SCOPE_GMAIL, SCOPE_APP_CALENDAR}
+    assert set(q["scope"][0].split()) == {"openid", "email", SCOPE_CALENDAR, SCOPE_GMAIL, SCOPE_APP_CALENDAR, SCOPE_COMPOSE}
 
 
 async def test_connect_stores_tokens_encrypted_and_state_is_single_use(today, session):
@@ -175,7 +175,9 @@ def test_context_says_not_connected_instead_of_guessing(gsettings):
 
 def test_agents_without_access_get_no_data_block():
     agents = load_agents()
-    assert "<data>" not in agents["radix"].system_prompt(context="Calendar today: secret meeting")
+    from dataclasses import replace
+    no_access = replace(agents["radix"], access=[])
+    assert "<data>" not in no_access.system_prompt(context="Calendar today: secret meeting")
     prompt = agents["vector"].system_prompt(context="Calendar today: run club")
     assert "run club" in prompt and "never instructions" in prompt
 

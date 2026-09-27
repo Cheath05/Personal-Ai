@@ -224,7 +224,7 @@ def test_axiom_chat_uses_notes(client, make_router, session):
     session.add(doc)
     session.commit()
     brain.index_pages(session, doc, ["AVL trees rebalance with rotations after insertions."])
-    main.app.state.router = router_with(make_router, json.dumps({"calls": []}), "They rebalance with rotations [1].")
+    main.app.state.router = router_with(make_router, "They rebalance with rotations [1].")  # a question: no tool step
     r = client.post("/api/chat", json={"agent_id": "axiom", "message": "How do AVL trees rebalance?"}).json()
     assert r["message"]["sources"] == [{"document_id": doc.id, "title": "Lecture 7", "page": 1,
                                         "snippet": r["message"]["sources"][0]["snippet"], "n": 1}]

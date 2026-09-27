@@ -26,7 +26,8 @@ jobs:
   notes_answer:  { policy: local_then_claude, lane: interactive, tier: default, effort: medium, max_tokens: 1000 }
   quiz:          { policy: local,             lane: interactive, max_tokens: 1800 }   # practice-test questions, as JSON
   quiz_check:    { policy: local,             lane: interactive, max_tokens: 20 }     # re-solve each question to verify its answer key
-  triage:        { policy: local,             lane: background,  max_tokens: 600 }
+  triage:        { policy: local,             lane: interactive, max_tokens: 700 }    # Relay sorting email, as JSON
+  draft:         { policy: local_then_claude, lane: interactive, tier: default, effort: medium, max_tokens: 600 }
   checkin:       { policy: local,             lane: interactive, max_tokens: 800 }
   plan_week:     { policy: local_then_claude, lane: interactive, tier: default, effort: high, max_tokens: 2000 }
   weekly_rollup: { policy: claude,            lane: interactive, tier: deep,    effort: high, max_tokens: 3000 }  # G14 first when Claude isn't set up

@@ -5,6 +5,7 @@ import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
 import { createReview } from "./review.js";
 import { createRunning } from "./running.js";
+import { createWorkforce } from "./workforce.js";
 
 const $ = (id) => document.getElementById(id);
 // Motion is a per-device choice. Full by default: Windows reports "reduce motion" whenever its
@@ -30,6 +31,7 @@ let actions = null;
 let reviewUI = null;
 let runningUI = null;
 let brainUI = null;
+let workforce = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -70,14 +72,14 @@ function go(view) {
   nexus?.setView(view);
   history.replaceState(null, "", `#${view}`);
   if (view === "access") refreshAccess();
-  if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); }
-  if (view === "review") reviewUI?.refresh();
+  if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); workforce?.refreshInbox(); }
+  if (view === "review") { reviewUI?.refresh(); workforce?.refreshFocus(); }
   if (view === "training") runningUI?.refresh();
   if (view === "brain") brainUI?.refresh();
 }
 
 /* ---------- Agent selection ---------- */
-function agentStatus() {
+function brainStatus() {
   const b = state.brains;
   if (!b) return { level: "", label: "Checking", line: "Checking brains…" };
   const online = b.local.filter((x) => x.online);
@@ -88,6 +90,15 @@ function agentStatus() {
     return { level: "warn", label: "Degraded", line: "No local brain online. Using Claude as backup." };
   }
   return { level: "bad", label: "Offline", line: "No brain online. Start Ollama on this Mac or the G14." };
+}
+// The brains decide the light first; then each agent's own needs (Relay needs Gmail, Vector needs runs…).
+const LEVEL_LABEL = { ok: "Nominal", warn: "Degraded", bad: "Offline" };
+function agentStatus(a = state.agents[state.sel]) {
+  const base = brainStatus();
+  const own = a && state.status?.[a.id];
+  if (!own || base.level !== "ok") return base;
+  if (own.level !== "ok") return { level: own.level, label: LEVEL_LABEL[own.level], line: own.reason };
+  return own.reason ? { ...base, line: `${base.line} ${own.reason}` } : base;
 }
 
 function renderAgentCard() {
@@ -105,7 +116,10 @@ function renderAgentCard() {
   light.className = `light ${s.level}`;
   light.textContent = s.label;
   $("a-status").textContent = s.line;
-  nexus?.setStatus(s.level);
+  nexus?.setStatus(Object.fromEntries(state.agents.map((x) => {
+    const st = agentStatus(x);
+    return [x.id, { level: st.level, reason: st.level === "ok" ? "" : st.line }];
+  })));
   const sees = $("a-sys-list"), changes = $("a-obj-list");
   sees.replaceChildren(...a.sees.map((x) => el("li", null, x)));
   changes.replaceChildren(...a.changes.map((x) => el("li", null, x)));
@@ -175,16 +189,38 @@ function appendChanges(div, m) {
   });
   div.append(box);
 }
-// Passages from your notes the reply cited: tap to open the page in the Second Brain.
+// What the reply cited. Notes open the page in the Second Brain; web pages (Radix) open in a new tab.
 function appendSources(div, m) {
   if (!m.sources?.length) return;
   const row = el("div", "msg-sources");
   m.sources.forEach((src) => {
+    if (src.url && !src.document_id) {
+      let host = "";
+      try { host = new URL(src.url).hostname.replace(/^www\./, ""); } catch { /* keep blank */ }
+      const a = el("a", "src-chip web", `[${src.n}] ${src.title}`);
+      Object.assign(a, { href: src.url, target: "_blank", rel: "noopener noreferrer", title: src.url });
+      if (host) a.append(el("span", "host", host));
+      row.append(a);
+      return;
+    }
     const b = el("button", "src-chip", `[${src.n}] ${src.title}, p. ${src.page}`);
     b.type = "button";
     b.addEventListener("click", () => { go("brain"); brainUI?.openDoc(src.document_id, src.page); });
     row.append(b);
   });
+  if (m.id && m.agent_id === "radix" && m.sources.some((src) => src.url)) {
+    const save = el("button", "linkish", "Save to Second Brain");
+    save.type = "button";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        const doc = await api.saveResearch(m.id);
+        save.replaceWith(el("span", "note small", `Saved as "${doc.title}"`));
+        toast("Saved to your Second Brain. Axiom can use it now.");
+      } catch (e) { toast(e.message); save.disabled = false; }
+    });
+    row.append(save);
+  }
   div.append(row);
 }
 
@@ -416,9 +452,9 @@ document.addEventListener("click", (e) => {
 
 /* ---------- Brains / Access ---------- */
 async function refreshBrains() {
-  try {
-    state.brains = await api.brains();
-  } catch { state.brains = null; }
+  const [brains, status] = await Promise.allSettled([api.brains(), api.agentStatus()]);
+  state.brains = brains.status === "fulfilled" ? brains.value : null;
+  if (status.status === "fulfilled") state.status = status.value;
   renderAgentCard();
 }
 
@@ -489,20 +525,6 @@ function renderToday(t) {
     }));
   }
 
-  // Inbox
-  const inbox = $("inbox-list");
-  if (!t.inbox.length) inbox.replaceChildren(emptyRow(googleOk ? "No inbox data." : "Connect Google to see your inbox."));
-  else {
-    const rows = [];
-    t.inbox.forEach((box) => {
-      const g = t.google.find((x) => x.slot === box.account);
-      rows.push(el("li", "day", `${g ? g.label : box.account} · ${box.unread} unread`));
-      if (!box.recent.length) rows.push(emptyRow("No new unread mail from people."));
-      box.recent.forEach((m) => rows.push(agendaRow(hm.format(new Date(m.ts)), m.subject, m.from, m.important ? "soon" : "")));
-    });
-    inbox.replaceChildren(...rows);
-  }
-
   // Connections
   const conn = $("conn-list");
   const items = t.google.map((g) => {
@@ -514,8 +536,10 @@ function renderToday(t) {
         : g.connected ? `${g.email || "Connected"}${g.gmail === false ? " · Gmail not granted" : ""}${g.calendar === false ? " · Calendar not granted" : ""}`
         : g.slot === "school" ? "Your UMBC account (may be blocked by UMBC)" : "Calendar and Gmail, read-only"));
     li.append(info);
-    if (g.slot === "personal" && g.connected && g.can_write === false && s?.status !== "error") {
-      info.lastChild.textContent = "Reconnect once so Cardinal can keep its own calendar (shows in Apple Calendar)";
+    const needs = g.connected && s?.status !== "error"
+      && [g.slot === "personal" && g.can_write === false && "keep its own calendar", g.gmail && g.can_draft === false && "save reply drafts"].filter(Boolean);
+    if (needs?.length) {
+      info.lastChild.textContent = `Reconnect once so Cardinal can ${needs.join(" and ")}`;
       const again = el("a", "btn", "Reconnect");
       again.href = `/api/google/connect?slot=${g.slot}`;
       li.append(again);
@@ -677,6 +701,7 @@ async function boot() {
   reviewUI.refreshChip();
   runningUI = createRunning({ toast, onChange: () => actions.refresh() });
   brainUI = createBrain({ toast, openDates: (job) => calendar.openImportJob(job), goReview: () => go("review") });
+  workforce = createWorkforce({ toast, onChange: () => { actions.refresh(); calendar.refresh(); reviewUI.refreshChip(); } });
   setInterval(() => { if (!document.hidden) { actions.refresh(); reviewUI.refreshChip(); } }, 60000);
   $("ci-chip").addEventListener("click", () => go("review"));
   $("ok-chip").addEventListener("click", () => go("today"));

@@ -245,9 +245,12 @@ def week_stats(session: Session, start: date, now: datetime) -> dict:
         streak += 1
         d -= timedelta(days=1)
     done = sum(1 for t in tasks if t.status == "done")
+    from .appusage import week_totals
     from .running import week_summary
     run = week_summary(session, start, now)
+    screen = week_totals(session, datetime.combine(start, datetime.min.time(), now.tzinfo))
     return {
+        "focus_hours": screen["focus"], "distraction_hours": screen["distraction"],
         "runs_done": run["runs_done"], "runs_planned": run["runs_planned"], "run_miles": run["miles"],
         "week_start": start.isoformat(), "days_elapsed": len(elapsed),
         "mornings": len(mornings), "evenings": len(evenings),
@@ -295,7 +298,9 @@ def _stats_text(s: dict) -> str:
     return (f"Morning check-ins: {s['mornings']} of {s['days_elapsed']} days. Evening reviews: {s['evenings']}. "
             f"Priorities done: {comp}. Study blocks done: {s['blocks_done']} of {s['blocks_planned']}. "
             f"Energy: {energy or 'not logged'}; average {s['energy_avg'] or '-'}{trend}. Check-in streak: {s['streak']} days. "
-            f"Runs: {s.get('runs_done', 0)} of {s.get('runs_planned', 0)} planned, {s.get('run_miles', 0)} mi.")
+            f"Runs: {s.get('runs_done', 0)} of {s.get('runs_planned', 0)} planned, {s.get('run_miles', 0)} mi. "
+            f"Computer time: {s.get('focus_hours', 0)} h focused, {s.get('distraction_hours', 0)} h on games/chat/video"
+            f"{' (app usage not connected)' if not s.get('focus_hours') and not s.get('distraction_hours') else ''}.")
 
 
 def _parse_json(text: str) -> dict:
@@ -445,7 +450,8 @@ def stat_patterns(session: Session, now: datetime) -> list[dict]:
 async def sigma_nightly(session: Session, router: BrainRouter, sigma: Agent, actions: Actions, now: datetime) -> int:
     """Propose new Core Memory patterns. They wait for your OK (or a trust rule)."""
     known = " ".join(m.text.lower() for m in session.exec(select(Memory)).all())
-    candidates = stat_patterns(session, now)
+    from .appusage import focus_patterns
+    candidates = stat_patterns(session, now) + focus_patterns(session, now)
     since = (now.date() - timedelta(days=14)).isoformat()
     evenings = session.exec(select(CheckIn).where(CheckIn.day >= since, CheckIn.kind == "evening")
                             .order_by(col(CheckIn.day))).all()

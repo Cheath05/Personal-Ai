@@ -325,6 +325,37 @@ class Quiz(SQLModel, table=True):
     finished_at: datetime | None = None
 
 
+class EmailItem(SQLModel, table=True):
+    """Relay's sorting of one email. Only metadata and the short snippet are kept, never the full body."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    account: str  # personal | school
+    message_id: str = Field(index=True, unique=True)
+    thread_id: str | None = None
+    sender: str
+    sender_raw: str | None = None
+    subject: str
+    snippet: str | None = None
+    received_at: datetime = Field(index=True)
+    category: str = "fyi"  # urgent | reply | fyi | noise
+    reason: str | None = None
+    task: str | None = None
+    due: str | None = None  # as written in the email, parsed when proposed
+    done: bool = False  # you marked it handled
+    draft_action_id: int | None = None
+    sorted_by: str = "relay"  # relay | rule
+
+
+class AppUsage(SQLModel, table=True):
+    """Minutes per app per hour, from ActivityWatch on your laptops. App names only, never window titles."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    device: str = Field(index=True)
+    hour: datetime = Field(index=True)  # start of the hour, UTC
+    app: str
+    seconds: int = 0
+
+
 _engine = None
 
 

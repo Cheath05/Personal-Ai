@@ -126,9 +126,18 @@
           <div class="ph"><span class="t">Due soon</span><span class="m">BLACKBOARD · 7 DAYS</span></div>
           <ul class="list agenda" id="due-list"></ul>
         </section>
-        <section class="panel">
-          <div class="ph"><span class="t">Inbox</span><span class="m">UNREAD · LAST 2 DAYS</span></div>
-          <ul class="list agenda" id="inbox-list"></ul>
+        <section class="panel inbox-panel">
+          <div class="ph"><span class="t">Inbox</span><span class="m" id="ib-meta">SORTED BY RELAY</span></div>
+          <div class="ib-bar">
+            <div class="seg" role="tablist" id="ib-tabs">
+              <button type="button" data-cat="todo" aria-selected="true">To do</button>
+              <button type="button" data-cat="fyi" aria-selected="false">FYI</button>
+              <button type="button" data-cat="noise" aria-selected="false">Noise</button>
+            </div>
+            <button type="button" class="btn" id="ib-sort">Sort now</button>
+          </div>
+          <p class="note small" id="ib-note"></p>
+          <ul class="list ib-list" id="inbox-list"></ul>
         </section>
         <section class="panel">
           <div class="ph"><span class="t">Connections</span><span class="m">WHAT CARDINAL READS</span></div>
@@ -358,6 +367,29 @@
           <div id="rv-exps"></div>
         </section>
 
+        <section class="panel span-all focus-panel">
+          <div class="ph"><span class="t">Focus</span><span class="m" id="fo-meta">APP TIME TODAY</span></div>
+          <div class="fo-kpis" id="fo-kpis"></div>
+          <figure class="fo-chart" aria-labelledby="fo-cap">
+            <figcaption id="fo-cap" class="note small">Minutes per hour at the computer</figcaption>
+            <div class="fo-legend" id="fo-legend"></div>
+            <div class="fo-plot" id="fo-plot" role="img"></div>
+            <div class="fo-tip" id="fo-tip" hidden></div>
+            <button type="button" class="linkish" id="fo-table-btn">Show as a table</button>
+            <table class="fo-table" id="fo-table" hidden></table>
+          </figure>
+          <div class="fo-apps" id="fo-apps"></div>
+          <details class="fo-connect"><summary>Connect a laptop</summary>
+            <p class="note small">ActivityWatch (free, open source) watches which app is in front. A small script sends app names and minutes to Cardinal every 15 minutes. Never window titles, websites, keystrokes or screenshots.</p>
+            <ol class="steps">
+              <li><button type="button" class="btn" id="fo-token">Make a secret</button> <code id="fo-token-val" hidden></code> <button type="button" class="linkish" id="fo-token-copy" hidden>Copy</button></li>
+              <li>Mac, in Terminal inside the Personal-Ai folder: <code>./scripts/install-aw-bridge-mac.sh</code></li>
+              <li>Windows (G14), in PowerShell inside the Personal-Ai folder: <code>powershell -ExecutionPolicy Bypass -File .\scripts\install-aw-bridge.ps1</code></li>
+              <li>Paste the secret when it asks. Data shows here within 15 minutes.</li>
+            </ol>
+          </details>
+        </section>
+
         <section class="panel span-all">
           <div class="ph"><span class="t">Weekly rollup</span><span class="m" id="rv-r-meta">–</span></div>
           <div id="rv-rollup"></div>
@@ -460,6 +492,24 @@
   <dialog class="sheet wide" id="quiz-dialog" aria-label="Practice test">
     <div class="sheet-head"><h3 id="quiz-h">Practice test</h3><button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
     <div id="quiz-body"></div>
+  </dialog>
+
+  <!-- Relay: a reply -->
+  <dialog class="sheet wide" id="mail-dialog" aria-labelledby="mail-h">
+    <div class="sheet-head"><h3 id="mail-h">Reply</h3><button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <div class="mail-orig" id="mail-orig"></div>
+    <form id="mail-form" class="sheet-form">
+      <label>What should the reply say? (optional)<input name="instructions" maxlength="1000" placeholder="e.g. yes, Thursday at 2 works"></label>
+      <div class="row-actions"><button type="button" class="btn" id="mail-write">Have Relay write it</button><span class="note small" id="mail-note"></span></div>
+      <label>To<input name="to" maxlength="500"></label>
+      <label>Subject<input name="subject" maxlength="300"></label>
+      <label>Message<textarea name="body" rows="8" maxlength="20000"></textarea></label>
+      <div class="row-actions">
+        <button type="button" class="btn" id="mail-save">Save to Gmail drafts</button>
+        <button type="button" class="btn primary" id="mail-send">Send</button>
+        <span class="note small">Nothing is sent until you press Send twice.</span>
+      </div>
+    </form>
   </dialog>
 
   <!-- Calendar: add an item -->

@@ -2,12 +2,12 @@
 
 import asyncio
 import contextlib
-from pathlib import Path
 import html
 import json
 import re
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -15,14 +15,41 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import brain, briefing, planner, prefs, review, running, syllabus, tools, usage
+from . import (
+    appusage,
+    brain,
+    briefing,
+    planner,
+    prefs,
+    relay,
+    research,
+    review,
+    running,
+    syllabus,
+    tools,
+    usage,
+)
 from .actions import ActionError, Actions
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
-from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
 from .calendar import Calendar, CalendarError
-from .db import (Action, CreditTopUp, Document, Experiment, Flashcard, Memory, Message, Quiz, SyllabusImport, Task,
-                 get_engine, get_session, utcnow)
+from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
+from .db import (
+    Action,
+    CreditTopUp,
+    Document,
+    EmailItem,
+    Experiment,
+    Flashcard,
+    Memory,
+    Message,
+    Quiz,
+    SyllabusImport,
+    Task,
+    get_engine,
+    get_session,
+    utcnow,
+)
 from .router import BrainRouter, NoBrainAvailable, basic_check
 from .sources.blackboard import Blackboard
 from .sources.google import SLOTS, Google, GoogleError
@@ -172,14 +199,15 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
 
     # Step 1-2: if the message asks for a change this agent owns, make it (or propose it) for real.
     results: list[tools.Result] = []
-    if tools.tools_for(agent.id) and not body.retry_with_claude:
+    if tools.tools_for(agent.id) and not body.retry_with_claude and turns and tools.wants_change(turns[-1]["content"]):
         recent = []  # changes this conversation made recently, oldest to newest ("that" = the last one)
         for m in reversed(history):
             if m.role == "assistant" and m.action_ids:
                 recent += json.loads(m.action_ids)
         ctx = tools.Ctx(session=session, now=now_local(), calendar=calendar_svc(), actions=actions_svc(),
                         agent_id=agent.id, router=router,
-                        extras={"agents": app.state.agents, "today": app.state.today, "recent_actions": recent[-6:]})
+                        extras={"agents": app.state.agents, "today": app.state.today, "recent_actions": recent[-6:],
+                                "save_research": save_research})
         results = await tools.plan_and_run(ctx, agent.name, turns)
         if results:
             app.state.today.invalidate()
@@ -192,10 +220,17 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
         context = f"{context}\n{extra}".strip()
     if "running" in agent.access:
         context = f"{context}\n{running.context_text(session, datetime.now(app.state.today.tz))}".strip()
+    if "apps" in agent.access:
+        usage_line = appusage.context_text(session, datetime.now(app.state.today.tz))
+        context = f"{context}\n{usage_line}".strip()
     hits: list[dict] = []
     if "notes" in agent.access and turns:
         notes, hits = brain.notes_context(session, turns[-1]["content"])
         context = f"{context}\n{notes}".strip()
+    if "web" in agent.access and turns and not body.retry_with_claude and research.worth_searching(turns[-1]["content"]):
+        web = await research.gather(turns[-1]["content"][:300])
+        context = f"{context}\n{research.web_context(web)}".strip()
+        hits = [{"url": w["url"], "title": w["title"], "snippet": w["snippet"] or w["text"][:200]} for w in web]
     try:
         result = await router.run(
             session, agent_id=agent.id, job=agent.job,
@@ -216,8 +251,8 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
                     provider=reply.provider, model=reply.model, brain=reply.brain,
                     action_ids=json.dumps([a.id for a in made]) if made else None,
                     changes=json.dumps([{"status": r.status, "text": r.text} for r in results]) if results else None,
-                    sources=json.dumps([{k: h[k] for k in ("document_id", "title", "page", "snippet")} for h in hits])
-                    if hits else None)
+                    sources=json.dumps([{k: h[k] for k in ("document_id", "title", "page", "snippet", "url") if k in h}
+                                        for h in hits]) if hits else None)
     session.add(saved)
     session.commit()
     session.refresh(saved)
@@ -1081,6 +1116,222 @@ def grade_quiz(quiz_id: int, body: GradeIn, session: Session = Depends(get_sessi
         return brain.quiz_json(brain.grade(session, quiz_id, body.answers, body.add_missed), reveal=True)
     except brain.BrainError as e:
         raise HTTPException(409, str(e)) from e
+
+
+# ---------- Relay: your inbox, sorted; drafts and sending with your OK ----------
+
+def email_item(item_id: int, session: Session) -> EmailItem:
+    item = session.get(EmailItem, item_id)
+    if not item:
+        raise HTTPException(404, "No such email.")
+    return item
+
+
+@app.get("/api/inbox")
+def get_inbox(session: Session = Depends(get_session)):
+    google = app.state.today.google
+    return {"items": [relay.item_json(e) for e in relay.inbox(session)],
+            "accounts": google.status(session), "last_sorted": prefs.get(session, "inbox_sorted_at")}
+
+
+@app.post("/api/inbox/sort")
+async def sort_inbox(session: Session = Depends(get_session)):
+    r = await relay.sort_inbox(session, app.state.router, app.state.today.google, user_name=get_settings().user_name)
+    prefs.put(session, "inbox_sorted_at", utcnow().isoformat())
+    return {**r, **get_inbox(session)}
+
+
+class DraftAsk(BaseModel):
+    instructions: str = Field(default="", max_length=1000)
+
+
+@app.post("/api/inbox/{item_id}/draft")
+async def draft_email(item_id: int, body: DraftAsk, session: Session = Depends(get_session)):
+    item = email_item(item_id, session)
+    try:
+        return await relay.write_draft(session, app.state.router, app.state.agents["relay"], app.state.today.google, item,
+                                       instructions=body.instructions, user_name=get_settings().user_name,
+                                       memory=review.memory_text(session))
+    except relay.RelayError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+class DraftIn(BaseModel):
+    to: str = Field(max_length=500)
+    subject: str = Field(max_length=300)
+    body: str = Field(max_length=20000)
+    thread_id: str | None = None
+    in_reply_to: str | None = None
+    references: str | None = Field(default=None, max_length=4000)
+
+
+async def _email_action(kind: str, item: EmailItem, d: DraftIn, session: Session) -> dict:
+    """You pressed the button with the text in front of you: that is the OK, so it runs now (and is logged)."""
+    svc = actions_svc()
+    payload = {**d.model_dump(), "account": item.account, "email_item_id": item.id}
+    if kind == "email.send" and item.draft_action_id:
+        prior = session.get(Action, item.draft_action_id)
+        if prior and prior.status == "executed" and json.loads(prior.payload).get("body") == d.body:
+            payload["draft_id"] = json.loads(prior.result or "{}").get("draft_id")
+    a = await svc.propose(session, agent_id="relay", kind=kind,
+                          title=("Draft: " if kind == "email.draft" else "Send: ") + d.subject,
+                          reason="You pressed it in the Inbox.", payload=payload)
+    if a.status == "pending":
+        a, _ = await svc.approve(session, a.id)
+    if a.status == "failed":
+        raise HTTPException(409, a.error or "Gmail didn't take it.")
+    return svc.to_json(a)
+
+
+@app.post("/api/inbox/{item_id}/save-draft")
+async def save_draft(item_id: int, body: DraftIn, session: Session = Depends(get_session)):
+    return await _email_action("email.draft", email_item(item_id, session), body, session)
+
+
+@app.post("/api/inbox/{item_id}/send")
+async def send_email(item_id: int, body: DraftIn, session: Session = Depends(get_session)):
+    return await _email_action("email.send", email_item(item_id, session), body, session)
+
+
+class DoneIn(BaseModel):
+    done: bool = True
+
+
+@app.post("/api/inbox/{item_id}/done")
+def email_done(item_id: int, body: DoneIn, session: Session = Depends(get_session)):
+    item = email_item(item_id, session)
+    item.done = body.done
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return relay.item_json(item)
+
+
+@app.post("/api/inbox/{item_id}/task")
+def email_task(item_id: int, session: Session = Depends(get_session)):
+    item = email_item(item_id, session)
+    title = item.task or f"Reply to {item.sender}"
+    day = now_local().date().isoformat()
+    session.add(Task(day=day, title=title[:200], source="email", position=len(review.tasks_for(session, day))))
+    session.commit()
+    return {"ok": True, "title": title}
+
+
+@app.post("/api/inbox/{item_id}/due")
+async def email_due(item_id: int, session: Session = Depends(get_session)):
+    """Put a date from an email on the calendar: Relay proposes it, you approve it on Today."""
+    item = email_item(item_id, session)
+    now = now_local()
+    d = syllabus.parse_date(item.due or "", now.date()) if item.due else None
+    if not d:
+        raise HTTPException(409, "Relay couldn't read a date in that email.")
+    start, end = syllabus.parse_times(item.due or "")
+    payload = {"date": d.isoformat(), "start": start or None, "end": (end or None) if start else None,
+               "title": (item.task or item.subject)[:200], "item_kind": "due", "noun": "items",
+               "notes": f"From an email by {item.sender}: {item.subject}", "window": ["00:00", "23:59"]}
+    if start and not end:
+        payload["end"] = start
+    a = await actions_svc().propose(session, agent_id="relay", kind="calendar.add_block", title=payload["title"],
+                                    reason=f"{item.sender} wrote \"{item.due}\".", payload=payload,
+                                    dedupe_key=f"email-due:{item.message_id}")
+    return actions_svc().to_json(a)
+
+
+# ---------- Radix: save research to the Second Brain ----------
+
+async def save_research(session: Session, msg: Message, title: str = "", course: str = "") -> Document:
+    sources = json.loads(msg.sources or "[]")
+    question = session.exec(select(Message).where(Message.agent_id == "radix", Message.role == "user",
+                                                  Message.id < msg.id).order_by(col(Message.id).desc())).first()
+    text_ = msg.content + "\n\nSources:\n" + "\n".join(f"[{i}] {s.get('title')}: {s.get('url')}" for i, s in enumerate(sources, 1))
+    doc = Document(title=(title or (f"Research: {question.content[:70]}" if question else "Research")).strip(),
+                   course=clean_course(course), kind="text", source_url=sources[0].get("url") if sources else None,
+                   detail="Starting…")
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+    start_job(brain.ingest(doc.id, app.state.router, text_=text_))
+    return doc
+
+
+class SaveResearchIn(BaseModel):
+    message_id: int
+    title: str | None = None
+    course: str | None = None
+
+
+@app.post("/api/research/save")
+async def save_research_endpoint(body: SaveResearchIn, session: Session = Depends(get_session)):
+    msg = session.get(Message, body.message_id)
+    if not msg or msg.agent_id != "radix" or msg.role != "assistant":
+        raise HTTPException(404, "That isn't a Radix answer.")
+    doc = await save_research(session, msg, body.title or "", body.course or "")
+    return brain.doc_json(session, doc)
+
+
+# ---------- App usage (ActivityWatch on your laptops) ----------
+
+@app.post("/api/apps/token")
+def apps_token(session: Session = Depends(get_session)):
+    return {"token": running.new_token(session, "apps_token_hash"),
+            "hub": get_settings().public_url.rstrip("/")}
+
+
+class AppHoursIn(BaseModel):
+    device: str = Field(max_length=40)
+    hours: list[dict] = Field(max_length=100)
+
+
+@app.post("/api/apps/ingest")
+def apps_ingest(body: AppHoursIn, session: Session = Depends(get_session),
+                x_cardinal_token: str | None = Header(default=None)):
+    if not running.token_ok(session, x_cardinal_token, "apps_token_hash"):
+        raise HTTPException(401, "Missing or wrong X-Cardinal-Token.")
+    return {"rows": appusage.ingest(session, body.device, body.hours)}
+
+
+@app.get("/api/apps/day")
+def apps_day(date: str | None = None, session: Session = Depends(get_session)):
+    d = parse_day(date)
+    start = datetime.combine(d, datetime.min.time(), app.state.today.tz)
+    out = appusage.day_summary(session, start)
+    out["last_sync"] = out["last_sync"].isoformat() if out["last_sync"] else None
+    out["devices_seen"] = {k: v.isoformat() for k, v in appusage.last_seen(session).items()}
+    out["token_set"] = bool(prefs.get(session, "apps_token_hash"))
+    return out
+
+
+# ---------- Status lights for each agent ----------
+
+@app.get("/api/agents/status")
+async def agents_status(session: Session = Depends(get_session)):
+    """Nominal / Degraded / Offline with a plain reason, per agent (PLAN §7)."""
+    b = await app.state.router.status()
+    brains_ok = any(x["online"] for x in b["local"]) or b["claude"]["configured"]
+    google = app.state.today.google.status(session)
+    connected = [g for g in google if g.get("connected")]
+    now = utcnow()
+    out = {}
+    for a in app.state.agents.values():
+        level, reason = "ok", None
+        if not brains_ok:
+            level, reason = "bad", "No brain online."
+        elif a.id in ("relay", "ordinal") and not connected:
+            level, reason = "warn", "Gmail and Calendar aren't connected."
+        elif a.id == "relay" and not any(g.get("can_draft") for g in connected):
+            level, reason = "warn", "Can sort mail; reconnect Google on Today to allow drafts."
+        elif a.id == "vector":
+            last = session.exec(select(running.Run).order_by(col(running.Run.start).desc())).first()
+            if not last:
+                level, reason = "warn", "No runs yet. Log one or connect the Apple Watch."
+            elif now - (last.start if last.start.tzinfo else last.start.replace(tzinfo=UTC)) > timedelta(days=5):
+                level, reason = "warn", "No run data in 5 days."
+        elif a.id == "axiom" and not session.exec(select(Document)).first():
+            level, reason = "warn", "The library is empty. Add class files on Brain."
+        elif a.id == "delta" and not appusage.last_seen(session):
+            level, reason = "ok", "App usage isn't connected (optional)."
+        out[a.id] = {"level": level, "reason": reason}
+    return out
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

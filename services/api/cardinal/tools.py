@@ -17,10 +17,10 @@ from datetime import date, datetime, timedelta
 from sqlmodel import Session, col, select
 
 from . import prefs
-from .actions import Actions, ActionError
+from .actions import ActionError, Actions
 from .calendar import KINDS as ITEM_KINDS
 from .calendar import Calendar, CalendarError
-from .db import Action, CalendarItem, Memory, Task
+from .db import Action, CalendarItem, EmailItem, Memory, Message, Task
 from .router import BrainRouter, NoBrainAvailable
 
 WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -197,6 +197,8 @@ async def _move(ctx: Ctx, ref: str, day: date, start: str | None, end: str | Non
             raise ToolError("That proposal isn't waiting any more.")
         p = json.loads(a.payload)
         length = _length(p)
+        if day.isoformat() == p["date"] and (not start or start == p.get("start")):
+            return Result(True, f"The proposal is already for {_fmt(day, p.get('start'), p.get('end'))}; nothing to change.")
         p["date"], p["start"] = day.isoformat(), start or p.get("start")
         p["end"] = end or (_add(p["start"], length) if p.get("start") else None)
         ctx.actions.update_pending(ctx.session, a, p)
@@ -209,6 +211,8 @@ async def _move(ctx: Ctx, ref: str, day: date, start: str | None, end: str | Non
     length = int((item.end - item.start).total_seconds() // 60)
     start = start or before["start"]
     end = end or (_add(start, length) if start else None)
+    if (day.isoformat(), start, end) == (before["date"], before["start"], before["end"]):
+        return Result(True, f"{item.title} is already at {_fmt(day, start, end)}; nothing to change.")
     payload = {"item_id": item.id, "title": item.title, "date": day.isoformat(), "start": start, "end": end,
                "from": before, "noun": noun, "window": list(_window_for(ctx, item.title))}
     a = await ctx.actions.propose(ctx.session, agent_id=ctx.agent_id, kind="calendar.move_item",
@@ -235,6 +239,21 @@ def _window_for(ctx: Ctx, title: str) -> tuple[str, str]:
     return prefs.window(ctx.session, "study_window", ("08:00", "22:00"))
 
 
+def _same_day_title(ctx: Ctx, title: str, day: date) -> str | None:
+    t = title.strip().lower()
+    tz = ctx.calendar.tz
+    start = datetime.combine(day, datetime.min.time(), tz)
+    for it in ctx.session.exec(select(CalendarItem).where(CalendarItem.start >= start,
+                                                          CalendarItem.start < start + timedelta(days=1))).all():
+        if it.title.strip().lower() == t:
+            return f"item {it.id}"
+    for a in ctx.actions.pending(ctx.session):
+        p = json.loads(a.payload)
+        if a.kind == "calendar.add_block" and p.get("date") == day.isoformat() and p.get("title", "").strip().lower() == t:
+            return f"proposal {a.id}"
+    return None
+
+
 KIND_WORDS = {"study": "reading", "studying": "reading", "review": "reading", "homework": "due", "assignment": "due",
               "deadline": "due", "test": "exam", "lecture": "class", "meeting": "event"}
 KIND_TITLES = {"reading": "Study", "due": "Due", "exam": "Exam", "quiz": "Quiz", "class": "Class", "no_class": "No class",
@@ -251,6 +270,9 @@ async def t_add(ctx: Ctx, a: dict) -> Result:
     if not title:
         raise ToolError("It needs a title.")
     day = resolve_date(a.get("date"), ctx.now)
+    dup = _same_day_title(ctx, title, day)
+    if dup:
+        raise ToolError(f"\"{title}\" is already on the calendar on {day:%a %d %b} ({dup}). Nothing added.")
     start, end = _time(a.get("start")), _time(a.get("end"))
     if start and not end:
         try:
@@ -548,6 +570,112 @@ async def t_flashcard(ctx: Ctx, a: dict) -> Result:
     return Result(True, f"Made a flashcard: \"{front[:80]}\". It's in today's review on the Brain page.")
 
 
+# ---------- Email (Relay) ----------
+
+def _email(ctx: Ctx, ref) -> EmailItem:
+    m = re.search(r"(\d+)", str(ref or ""))
+    item = ctx.session.get(EmailItem, int(m.group(1))) if m else None
+    if not item and ref:  # the model named it by sender or subject
+        t = str(ref).lower()
+        for e in ctx.session.exec(select(EmailItem).where(EmailItem.done == False).order_by(col(EmailItem.received_at).desc())).all():  # noqa: E712
+            if t in e.sender.lower() or t in e.subject.lower():
+                return e
+    if not item:
+        raise ToolError("I couldn't tell which email. Use its id from the list, like 'email 12'.")
+    return item
+
+
+def inbox_state(ctx: Ctx) -> str:
+    from .relay import inbox
+    rows = inbox(ctx.session)[:15]
+    return "\n".join(f"[email {e.id}] ({e.category}) {e.sender}: {e.subject}" + (f" - task: {e.task}" if e.task else "")
+                     for e in rows) or "No sorted email yet (sort_inbox fetches and sorts it)."
+
+
+async def t_sort_inbox(ctx: Ctx, a: dict) -> Result:
+    from .relay import sort_inbox
+    r = await sort_inbox(ctx.session, ctx.router, ctx.calendar.google)
+    return Result(not r["errors"] or r["sorted"] > 0,
+                  f"Sorted {r['sorted']} new email(s)." + (f" Problems: {'; '.join(r['errors'])}" if r["errors"] else ""))
+
+
+async def t_draft_reply(ctx: Ctx, a: dict) -> Result:
+    from . import review
+    from .relay import RelayError, write_draft
+    item = _email(ctx, a.get("email"))
+    try:
+        d = await write_draft(ctx.session, ctx.router, ctx.extras["agents"]["relay"], ctx.calendar.google, item,
+                              instructions=str(a.get("instructions") or ""), memory=review.memory_text(ctx.session))
+    except RelayError as e:
+        raise ToolError(str(e)) from e
+    act = await ctx.actions.propose(ctx.session, agent_id="relay", kind="email.draft", title=f"Draft: {d['subject']}",
+                                    reason="You asked in chat. Saving a draft sends nothing.", payload=d)
+    status = "Saved in Gmail drafts (a trust rule allowed it)" if act.status == "executed" else "Waiting for the user's OK to save it as a Gmail draft (a card under your reply)"
+    return Result(act.status != "failed", f"Drafted a reply to {item.sender}: \"{d['body'][:160]}...\" {status}.", act)
+
+
+async def t_send_reply(ctx: Ctx, a: dict) -> Result:
+    item = _email(ctx, a.get("email"))
+    draft = ctx.session.get(Action, item.draft_action_id) if item.draft_action_id else None
+    if not draft:
+        pending = [x for x in ctx.actions.pending(ctx.session) if x.kind == "email.draft"
+                   and json.loads(x.payload).get("email_item_id") == item.id]
+        draft = pending[-1] if pending else None
+    if not draft:
+        raise ToolError("There's no draft for that email yet. Ask me to draft one first.")
+    p = json.loads(draft.payload)
+    if draft.status == "executed":
+        p["draft_id"] = json.loads(draft.result or "{}").get("draft_id")
+    act = await ctx.actions.propose(ctx.session, agent_id="relay", kind="email.send", title=f"Send: {p['subject']}",
+                                    reason="You asked to send it. Sending always waits for your OK.", payload=p)
+    return Result(True, "Ready to send. Sending always waits for the user's OK (a card under your reply).", act)
+
+
+async def t_email_done(ctx: Ctx, a: dict) -> Result:
+    item = _email(ctx, a.get("email"))
+    item.done = True
+    ctx.session.add(item)
+    ctx.session.commit()
+    return Result(True, f"Marked \"{item.subject}\" as handled.")
+
+
+# ---------- Research (Radix) ----------
+
+async def t_save_research(ctx: Ctx, a: dict) -> Result:
+    msg = ctx.session.exec(select(Message).where(Message.agent_id == "radix", Message.role == "assistant",
+                                                 Message.sources != None).order_by(col(Message.id).desc())).first()  # noqa: E711
+    if not msg:
+        raise ToolError("There's no research answer to save yet.")
+    save = ctx.extras.get("save_research")
+    if not save:
+        raise ToolError("Saving isn't available here.")
+    doc = await save(ctx.session, msg, str(a.get("title") or ""), str(a.get("course") or ""))
+    return Result(True, f"Saved to the Second Brain as \"{doc.title}\". Axiom will make notes and flashcards from it.")
+
+
+# ---------- Delegation (Cardinal) ----------
+
+TEAM = {"vector": "running and runs on the calendar", "axiom": "school: calendar items, study time, flashcards",
+        "delta": "tasks and check-in times", "ordinal": "the morning briefing", "sigma": "Core Memory",
+        "relay": "email: sorting, drafting and sending replies"}
+
+
+async def t_ask_teammate(ctx: Ctx, a: dict) -> Result:
+    agent = str(a.get("agent") or "").strip().lower()
+    request = str(a.get("request") or "").strip()
+    if agent not in TEAM or not request:
+        raise ToolError(f"Which teammate? One of: {', '.join(TEAM)}.")
+    names = {"vector": "Vector", "axiom": "Axiom", "delta": "Delta", "ordinal": "Ordinal", "sigma": "Sigma", "relay": "Relay"}
+    sub = Ctx(session=ctx.session, now=ctx.now, calendar=ctx.calendar, actions=ctx.actions, agent_id=agent,
+              router=ctx.router, extras={**ctx.extras, "recent_actions": []})
+    results = await plan_and_run(sub, names[agent], [{"role": "user", "content": request}])
+    if not results:
+        return Result(False, f"{names[agent]} didn't find anything to change for: {request}")
+    made = [act for r in results for act in r.all_actions]
+    return Result(all(r.ok for r in results), " ".join(f"{names[agent]}: {r.text}" for r in results),
+                  made[0] if made else None, made[1:])
+
+
 # ---------- The registry ----------
 
 CAL = ("axiom", "cardinal")
@@ -603,12 +731,51 @@ TOOLS = [
     Tool("set_briefing_time", ("ordinal",), "Change when the morning briefing is written.", {"time": "HH:MM"}, t_briefing_time,
          '"write my briefing at 6:30" -> set_briefing_time(time 06:30)'),
     Tool("write_briefing", ("ordinal",), "Write a fresh briefing now.", {}, t_write_briefing, '"redo my briefing" -> write_briefing()'),
+    Tool("sort_inbox", ("relay",), "Fetch new email from both accounts and sort it.", {}, t_sort_inbox,
+         '"check my email" -> sort_inbox()'),
+    Tool("draft_reply", ("relay",), "Write a reply to an email and offer to save it as a Gmail draft (never sends).",
+         {"email": "e.g. 'email 12', or the sender's name", "instructions": "what the reply should say (optional)"},
+         t_draft_reply, '"reply to Prof. Lee saying I\'ll be at office hours Thursday" -> draft_reply(email <its id>, instructions "I\'ll be at office hours Thursday")',
+         {"email": ("id", "message", "to"), "instructions": ("text", "say", "message_text")}),
+    Tool("send_reply", ("relay",), "Send the draft for an email. Always waits for the user's OK.",
+         {"email": "e.g. 'email 12'"}, t_send_reply, '"send it" -> send_reply(email <the email just drafted>)',
+         {"email": ("id",)}),
+    Tool("mark_email_done", ("relay",), "Mark an email as handled.", {"email": "e.g. 'email 12'"}, t_email_done,
+         "", {"email": ("id",)}),
+    Tool("save_to_brain", ("radix",), "Save the latest research answer (with its sources) to the Second Brain.",
+         {"title": "optional title", "course": "optional course"}, t_save_research, '"save that" -> save_to_brain()'),
+    Tool("ask_teammate", ("cardinal",), "Hand a request to the teammate who owns it; they make the change.",
+         {"agent": "vector | axiom | delta | ordinal | sigma | relay", "request": "the request, in the user's words"},
+         t_ask_teammate, '"tell Vector I can\'t run before 8:30" -> ask_teammate(agent vector, request "I can\'t run before 8:30")',
+         {"request": ("message", "text", "task")}),
     Tool("remember", ("sigma", "cardinal"), "Save something about the user to Core Memory.",
          {"text": "the fact, in third person", "kind": "fact|preference|pattern"}, t_remember,
          '"remember I study best in the library" -> remember(text "Studies best in the library", kind preference)', {"text": TEXT}),
     Tool("forget", ("sigma", "cardinal"), "Delete a Core Memory entry.", {"id": "e.g. 'memory 3'"}, t_forget,
          "", {"id": ("memory", "memory_id")}),
 ]
+
+
+CHANGE_WORDS = re.compile(
+    r"\b(add|put|schedule (it|this|that|a|an|me|my|some|time|study|studying|a run)|move|shift|push|resched\w*|change|"
+    r"edit|adjust|fix|modify|swap|switch|set|update|cancel|remove|delete|drop|make|create|log|record|remember|"
+    r"forget|draft|reply|respond|send|mark|finish(ed)?|book|replan|re-plan|plan (my|the|a)|sort|save|"
+    r"check (my )?(e-?mail|inbox|mail)|tell (vector|axiom|delta|ordinal|sigma|relay)|"
+    r"can'?t|cannot|can not|won'?t|unable|don'?t wake|no longer|instead)\b", re.I)
+NEGATED = re.compile(r"\b(not|don'?t|do not|didn'?t|without|no need to|never)\s+(\w+\s+)?$", re.I)
+
+
+def wants_change(message: str) -> bool:
+    """Only messages that ask for a change go to the tools. "Do I run tomorrow?" is a question, not a request,
+    and small models will happily "fix" things nobody asked about if they're given the chance.
+    Change words right after "not" / "don't" ("not add it") don't count."""
+    text = message or ""
+    for m in CHANGE_WORDS.finditer(text):
+        if m.group(0).lower().startswith(("can", "won", "unable", "don", "no longer")):
+            return True  # constraints like "I can't run before 8:30" are requests
+        if not NEGATED.search(text[max(0, m.start() - 30):m.start()]):
+            return True
+    return False
 
 
 def tools_for(agent_id: str) -> list[Tool]:
@@ -635,6 +802,10 @@ def state_for(ctx: Ctx) -> str:
         parts.append("Tasks:\n" + tasks_state(ctx))
     if "remember" in names:
         parts.append("Core Memory:\n" + memory_state(ctx))
+    if "draft_reply" in names:
+        parts.append("Inbox (ids to use):\n" + inbox_state(ctx))
+    if "ask_teammate" in names:
+        parts.append("Teammates: " + "; ".join(f"{k} handles {v}" for k, v in TEAM.items()) + ".")
     return "\n\n".join(parts)
 
 

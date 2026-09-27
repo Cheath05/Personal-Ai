@@ -512,7 +512,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | 3. Executive Assistant ✅ | Hub | Delta's morning check-in and evening review, weekly rollup with a plan you authorize, experiments, Core Memory v1 with Sigma's nightly patterns (shown to you first) |
 | 4. Running ✅ | Hub + iPhone | Vector's 12-week plan and VDOT paces (recalculated after time trials), runs checked against each session, status window, runs proposed on the calendar, Apple Watch data via Health Auto Export (automatic) or an Apple Health export (free), manual logging, readiness from sleep and resting HR |
 | 5. Second Brain ✅ | Hub | Library (PDF, slides, Word, photos, links, notes) with page-cited search (SQLite FTS5), ask-your-notes at three levels, summaries and key terms, FSRS flashcards, exam mode with verified answer keys, dates from files, Core Memory ring |
-| 6. Full Workforce | Mac | Relay drafts, Sigma patterns, Radix, ActivityWatch |
+| 6. Full Workforce ✅ | Hub + laptops | Relay sorts both inboxes hourly, writes replies you edit, saves Gmail drafts and sends only on your tap; dates and to-dos from email; Radix web research with cited sources you can save to the Second Brain; ActivityWatch app usage from the Mac and G14 (Focus panel, Sigma's focus-hour patterns); Cardinal hands requests to teammates; a status light per agent |
 | 7. Hardening | Server | Push notifications, login with a passkey, Postgres if SQLite ever gets slow, restore drills |
 
 ## 11. Repo layout

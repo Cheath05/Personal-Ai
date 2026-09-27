@@ -224,7 +224,88 @@ async def _remove_undo(svc: "Actions", session: Session, result: dict) -> None:
                            kind=r["kind"], course=r["course"], notes=r["notes"], source=r["source"])
 
 
+# ---------- email.draft / email.send: Relay's replies ----------
+
+def _email_preview(p: dict, tz: ZoneInfo) -> dict:
+    from .relay import recipient_name
+    return {"change": "Save a reply as a Gmail draft (in the same thread). Nothing is sent.",
+            "before": "No reply", "after": f"To {recipient_name(p['to'])} · {p['subject']}\n\n{p['body']}",
+            "where": f"Your {'UMBC' if p.get('account') == 'school' else 'personal'} Gmail drafts"}
+
+
+def _send_preview(p: dict, tz: ZoneInfo) -> dict:
+    from .relay import recipient_name
+    return {"change": "SEND this email. It can't be unsent.", "before": "Draft",
+            "after": f"To {recipient_name(p['to'])} · {p['subject']}\n\n{p['body']}",
+            "where": f"From your {'UMBC' if p.get('account') == 'school' else 'personal'} Gmail"}
+
+
+def _draft_rule(p: dict, agent_name: str) -> tuple[dict, str]:
+    return {}, (f"{agent_name} may save reply drafts in your Gmail without asking. It never sends them: "
+                "sending always asks. You still get a note with Undo.")
+
+
+def _gmail(svc: "Actions", session: Session, p: dict):
+    google = svc.calendar.google
+    acct = google.account(session, p.get("account", "personal"))
+    if not google.can_draft(acct):
+        raise ActionError("Gmail drafts aren't allowed yet. Reconnect that Google account on Today to allow them.")
+    return google, acct
+
+
+async def _draft_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    google, acct = _gmail(svc, session, p)
+    try:
+        draft_id = await google.create_draft(session, acct, to=p["to"], subject=p["subject"], body=p["body"],
+                                             thread_id=p.get("thread_id"), in_reply_to=p.get("in_reply_to"),
+                                             references=p.get("references"))
+    except Exception as e:
+        raise ActionError(f"Gmail didn't take the draft: {e}") from e
+    if p.get("email_item_id"):
+        from .db import EmailItem
+        item = session.get(EmailItem, p["email_item_id"])
+        if item:
+            item.draft_action_id = a.id
+            session.add(item)
+            session.commit()
+    return {"draft_id": draft_id, "account": p.get("account", "personal")}
+
+
+async def _draft_undo(svc: "Actions", session: Session, result: dict) -> None:
+    google = svc.calendar.google
+    acct = google.account(session, result.get("account", "personal"))
+    if acct:
+        await google.delete_draft(session, acct, result["draft_id"])
+
+
+async def _send_execute(svc: "Actions", session: Session, a: Action, p: dict) -> dict:
+    google, acct = _gmail(svc, session, p)
+    try:
+        draft_id = p.get("draft_id") or await google.create_draft(
+            session, acct, to=p["to"], subject=p["subject"], body=p["body"], thread_id=p.get("thread_id"),
+            in_reply_to=p.get("in_reply_to"), references=p.get("references"))
+        sent_id = await google.send_draft(session, acct, draft_id)
+    except Exception as e:
+        raise ActionError(f"Gmail didn't send it: {e}") from e
+    if p.get("email_item_id"):
+        from .db import EmailItem
+        item = session.get(EmailItem, p["email_item_id"])
+        if item:
+            item.done = True
+            session.add(item)
+            session.commit()
+    return {"sent_id": sent_id}
+
+
+async def _no_undo(svc: "Actions", session: Session, result: dict) -> None:
+    raise ActionError("Sent email can't be unsent.")
+
+
 KINDS = {
+    "email.draft": Kind("email.draft", "Save a reply draft", True,
+                        _email_preview, _draft_rule, lambda c, p: True, _draft_execute, _draft_undo),
+    "email.send": Kind("email.send", "Send an email", False,
+                       _send_preview, lambda p, n: ({}, ""), lambda c, p: False, _send_execute, _no_undo),
     "calendar.move_item": Kind("calendar.move_item", "Move a calendar item", True,
                                _move_preview, _move_rule, _move_matches, _move_execute, _move_undo),
     "calendar.remove_item": Kind("calendar.remove_item", "Remove a calendar item", True,

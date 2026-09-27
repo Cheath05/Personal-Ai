@@ -303,6 +303,13 @@ export function createNexus({ canvas, stage, agents, onSelect, reduceMotion = fa
     },
     setState(s) { state = s; requestDraw(); },
     setView(v) { view = v; requestDraw(); },
-    setStatus(level) { nodes.forEach((n) => { n.dot.className = level; }); },
+    // One level for every node, or a map of agent id → { level, reason } for a light per agent.
+    setStatus(status) {
+      nodes.forEach((n) => {
+        const s = typeof status === "string" ? { level: status } : status[n.a.id] || {};
+        n.dot.className = s.level || "";
+        n.el.title = s.reason ? `${n.a.name}: ${s.reason}` : n.a.name;
+      });
+    },
   };
 }

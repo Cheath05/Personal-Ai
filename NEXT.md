@@ -1,4 +1,4 @@
-# Next session: Phase 6 (full workforce) or voice
+# Next session: Phase 1.6 (voice) or Phase 7 (hardening)
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -162,7 +162,7 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Ordinal: briefing time, rewrite.
   - Sigma: remember/forget.
   - Cardinal: calendar, tasks, memory.
-  - Relay and Radix: none, and they're told so.
+  - Relay and Radix: none at the time (Phase 6 added theirs).
 - **Tested:** 89 tests. The real 4B model on the demo handled the user's own Vector message: it set the hours and proposed moving Tuesday's 06:00 intervals to 16:30.
 - **On the hub:** Tuesday's approved run is still at 06:00. Re-send the request to Vector, and it will now propose the move.
 
@@ -185,9 +185,46 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - **Tested:** 100 tests. Real run on the Mac 4B: a lecture was digested into an accurate summary, 5 terms and 6 good cards, with the course detected.
 - **Not done:** a Google Drive "School" folder sync (it needs the drive.readonly scope and the Drive API enabled), and Sigma's daily log.
 
+## Phase 6 (built 27 Sep 2026): Full workforce
+
+- **Relay** (`cardinal/relay.py`, `EmailItem`):
+  - **Sorting:** hourly (briefing scheduler) or "Sort now". Gmail's Promotions/Social/Forums labels are Noise with no model. The rest go in batches of 6 to the `triage` job (JSON schema) for category (urgent / reply / fyi / noise), a reason, a task and a date.
+    - Stored: sender, subject, Gmail's snippet and the verdict. Not the body.
+    - **The schema caps string lengths** (`maxLength`). Without them the 4B model looped inside a string ("or go over project or go over…") and never closed the JSON.
+    - An unreadable answer leaves that batch unsaved, so the next sort retries it.
+    - The prompt includes today's date.
+  - **Replies:** `write_draft` reads that one message's full text (the `draft` job) and returns To / Subject / Body in the thread (In-Reply-To set). It's laid out as a real email: greeting, blank line, message, first name.
+    - Saving is an `email.draft` Action: undoable, and it can have a rule.
+    - Sending is `email.send`: always asks, never a rule. The Inbox buttons count as the OK, because you press them with the text in front of you (`_email_action`).
+  - **From an email:** "Add to today" (a Task) and "Put date on calendar" (a `calendar.add_block` proposal, deduped per message).
+  - **Scopes:** drafts need `gmail.compose` (`SCOPE_COMPOSE`). Accounts connected before this show a Reconnect button, and `_gmail` refuses with "Reconnect…" until then.
+- **Radix** (`cardinal/research.py`): searches DuckDuckGo's HTML page, its lite page when the first answers with a bot check (HTTP 202), then Wikipedia's search (keywords only).
+  - It fetches the top pages, keeps only paragraphs that share words with the question, and drops off-topic pages (`on_topic`: a two-word term in the question, like "spacing effect", must appear on the page).
+  - The reply cites [n], and the chat shows clickable source chips.
+  - "Save to Second Brain" (`/api/research/save`, or Radix's `save_to_brain` tool) files the answer and its links as a document.
+- **App usage** (`cardinal/appusage.py`, `AppUsage`): `scripts/aw_bridge.py` (standard library only) sends app minutes per hour from ActivityWatch every 15 minutes, with header `X-Cardinal-Token` (hash in `Pref` `apps_token_hash`).
+  - Installers: `scripts/install-aw-bridge-mac.sh` (launchd) and `scripts/install-aw-bridge.ps1` (a scheduled task; **not yet run on Windows**).
+  - Apps are grouped as focus / distraction / neutral by name. Browsers are neutral, because there are no titles.
+  - Sigma's nightly pass adds best and worst focus hours once there are 5 days of data. The weekly stats include focus and distraction hours.
+- **Cardinal** can `ask_teammate` (it runs that agent's own tools). **Status lights:** `/api/agents/status` gives each agent ok / warn / bad with a reason, shown on its card and its Nexus node.
+- **UI:**
+  - Today → Inbox: To do / FYI / Noise tabs, and a reply dialog. Send takes a second tap ("Confirm").
+  - Review → Focus: tiles, an hourly stacked chart with tooltips and a table view, top apps, laptops, and "Connect a laptop".
+  - The chart colors were checked with the dataviz validator on the dark panel, including all color-blind pairs: focus #199e70, other #3987e5, distraction #d95926.
+- **Also fixed:** Cardinal answered "Do I work out tomorrow?" by proposing changes.
+  - Tools now run only when the message asks for a change (`tools.wants_change`). Duplicate adds and no-op moves are refused.
+  - The running context states tomorrow's plan outright (`schedule_lines`).
+- **Tested:** 111 tests. On the real Mac 4B model:
+  - Sorting: 7 emails in 10 s, all sensible.
+  - Drafts: about 2 s each, and they read well.
+  - Radix: a cited spacing-effect answer from Wikipedia and a university page in 9 s.
+- **Needs the user:**
+  - Today → Connections → **Reconnect** Personal Google to grant drafts. If Google refuses, add `gmail.compose` under Google Auth Platform → Data Access.
+  - Review → Focus → Connect a laptop → Make a secret, then run the Mac installer. The G14 installer is for a Windows session.
+
 ## Next
 
-- **Phase 6: Full workforce** (Relay drafts, Sigma patterns, Radix research, ActivityWatch), or **Phase 1.6: voice**. Ask the user.
+- **Phase 1.6: voice** or **Phase 7: hardening** (push notifications for check-ins and urgent mail, passkey login). Ask the user.
 
 ## Things to keep in mind
 

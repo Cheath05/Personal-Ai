@@ -326,14 +326,14 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def new_token(session: Session) -> str:
+def new_token(session: Session, key: str = "ingest_token_hash") -> str:
     token = secrets.token_urlsafe(24)
-    set_pref(session, "ingest_token_hash", token_hash(token))
+    set_pref(session, key, token_hash(token))
     return token
 
 
-def token_ok(session: Session, token: str | None) -> bool:
-    stored = get_pref(session, "ingest_token_hash")
+def token_ok(session: Session, token: str | None, key: str = "ingest_token_hash") -> bool:
+    stored = get_pref(session, key)
     return bool(token and stored and secrets.compare_digest(stored, token_hash(token)))
 
 
@@ -476,7 +476,6 @@ def _import_workout(session: Session, el, cutoff: datetime) -> int:
 # ---------- For agents and the weekly rollup ----------
 
 def context_text(session: Session, now: datetime) -> str:
-    today = now.date()
     s = status(session, now)
     f = s["fitness"]
     lines = [f"Running fitness: VDOT {f['vdot']} (5K {f['five_k']}, mile {f['mile']}); targets 5K {f['target_5k']}, mile {f['target_mile']}. "
@@ -486,6 +485,7 @@ def context_text(session: Session, now: datetime) -> str:
             f"{x['day']} {x['title']} ({x['status']}{', ' + x['run']['pace'] + ' /mi' if x.get('run') else ''})" for x in s["this_week"]) + ".")
     else:
         lines.append(f"The 12-week plan starts {s['plan']['start']}.")
+    lines += schedule_lines(session, now)
     for r in s["runs"][:3]:
         lines.append(f"Run {r['date']}: {r['miles']} mi in {r['duration']} ({r['pace']} /mi)" + (f", avg HR {r['avg_hr']}" if r["avg_hr"] else "") + ".")
     h = s["health"]
@@ -493,6 +493,42 @@ def context_text(session: Session, now: datetime) -> str:
         lines.append("Watch: " + ", ".join(f"{k.replace('_', ' ')} {v['value']} ({v['day']})" for k, v in h.items()) + ".")
     lines += s["readiness"]
     return "\n".join(lines)
+
+
+EFFORT = {"long": "easy, long", "easy": "easy", "intervals": "hard (quality day)", "tempo": "hard (quality day)",
+          "time_trial": "all-out time trial"}
+
+
+def schedule_lines(session: Session, now: datetime, days: int = 7) -> list[str]:
+    """Plain answers for "do I run tomorrow? easy or hard?": today, tomorrow, then the next runs with their
+    calendar times. Small models answer much better from a sentence than from a table they must work out."""
+    from .db import CalendarItem
+
+    today = now.date()
+    tz = now.tzinfo
+    planned = {s["date"]: s for s in sessions(session, today, today + timedelta(days=days), today)}
+    start = datetime.combine(today, datetime.min.time(), tz)
+    on_cal = {}
+    for it in session.exec(select(CalendarItem).where(CalendarItem.start >= start,
+                                                      CalendarItem.start < start + timedelta(days=days + 1))).all():
+        if it.title.lower().startswith("run:"):
+            local = it.start.astimezone(tz)
+            on_cal.setdefault(local.date().isoformat(), f"{local:%H:%M}–{it.end.astimezone(tz):%H:%M}")
+
+    def describe_day(d: date) -> str:
+        s = planned.get(d.isoformat())
+        if not s:
+            return "rest day, no run planned"
+        when = on_cal.get(d.isoformat())
+        return f"{s['title']}, {EFFORT.get(s['kind'], s['kind'])}" + (f", on the calendar {when}" if when else ", not on the calendar yet")
+
+    tomorrow = today + timedelta(days=1)
+    out = [f"Today ({today:%a %d %b}): {describe_day(today)}.", f"Tomorrow ({tomorrow:%a %d %b}): {describe_day(tomorrow)}."]
+    upcoming = [f"{date.fromisoformat(k):%a %d %b}: {describe_day(date.fromisoformat(k))}" for k in sorted(planned)
+                if k > tomorrow.isoformat()][:3]
+    if upcoming:
+        out.append("Next runs after that: " + "; ".join(upcoming) + ".")
+    return out
 
 
 def week_summary(session: Session, monday: date, now: datetime) -> dict:

@@ -88,7 +88,23 @@ async def run_scheduler(state, settings) -> None:
     last_plan_day: str | None = None
     last_sigma_day: str | None = None
     last_rollup_try: datetime | None = None
+    last_inbox: datetime | None = None
     while True:
+        try:  # Relay sorts new mail every hour (only if an account is connected)
+            now = datetime.now(tz)
+            if last_inbox is None or now - last_inbox >= timedelta(hours=1):
+                last_inbox = now
+                from . import relay
+                with Session(get_engine()) as session:
+                    if any(state.today.google.account(session, slot) for slot in ("personal", "school")):
+                        r = await relay.sort_inbox(session, state.router, state.today.google,
+                                                   user_name=settings.user_name)
+                        prefs.put(session, "inbox_sorted_at", datetime.now(tz).isoformat())
+                        log.info("Relay sorted %s new emails", r["sorted"])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Relay's inbox sort failed")
         try:  # Delta's weekly rollup, Sundays at rollup_time (retries every 15 min if no brain answered)
             now = datetime.now(tz)
             with Session(get_engine()) as session:

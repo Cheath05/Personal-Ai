@@ -29,7 +29,8 @@ GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
 SCOPE_CALENDAR = "https://www.googleapis.com/auth/calendar.readonly"
 SCOPE_GMAIL = "https://www.googleapis.com/auth/gmail.readonly"
 SCOPE_APP_CALENDAR = "https://www.googleapis.com/auth/calendar.app.created"  # only calendars Cardinal made
-SCOPES = ["openid", "email", SCOPE_CALENDAR, SCOPE_GMAIL, SCOPE_APP_CALENDAR]
+SCOPE_COMPOSE = "https://www.googleapis.com/auth/gmail.compose"  # Relay's drafts, and sending you approved
+SCOPES = ["openid", "email", SCOPE_CALENDAR, SCOPE_GMAIL, SCOPE_APP_CALENDAR, SCOPE_COMPOSE]
 CARDINAL_CALENDAR = "Cardinal"
 
 SLOTS = {"personal": "Personal Google", "school": "UMBC Google"}
@@ -160,7 +161,7 @@ class Google:
             if acct:
                 item.update(email=acct.email, error=acct.last_error,
                             calendar=SCOPE_CALENDAR in acct.scopes, gmail=SCOPE_GMAIL in acct.scopes,
-                            can_write=SCOPE_APP_CALENDAR in acct.scopes)
+                            can_write=SCOPE_APP_CALENDAR in acct.scopes, can_draft=SCOPE_COMPOSE in acct.scopes)
             out.append(item)
         return out
 
@@ -307,3 +308,77 @@ class Google:
             await self._request(session, acct, "DELETE", url)
         except NotFound:
             pass  # already gone
+
+
+    # ---------- Email for Relay: full messages, drafts in the thread, sending a draft you approved ----------
+
+    def can_draft(self, acct: GoogleAccount | None) -> bool:
+        return bool(acct and SCOPE_COMPOSE in acct.scopes)
+
+    async def recent_messages(self, session: Session, acct: GoogleAccount, days: int = 7, limit: int = 25) -> list[dict]:
+        listing = await self._get(session, acct, f"{GMAIL}/messages",
+                                  {"q": f"in:inbox newer_than:{days}d", "maxResults": limit})
+        out = []
+        for m in listing.get("messages", []):
+            msg = await self._get(session, acct, f"{GMAIL}/messages/{m['id']}", [
+                ("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject"),
+                ("metadataHeaders", "Date")])
+            p = parse_message(msg)
+            out.append({**p, "id": msg["id"], "thread_id": msg.get("threadId"), "snippet": msg.get("snippet", ""),
+                        "unread": "UNREAD" in msg.get("labelIds", []), "account": acct.slot,
+                        "from_raw": next((h["value"] for h in msg.get("payload", {}).get("headers", [])
+                                          if h["name"].lower() == "from"), "")})
+        return out
+
+    async def full_message(self, session: Session, acct: GoogleAccount, message_id: str) -> dict:
+        """Headers and the plain-text body (HTML stripped). Used only to draft a reply you asked for."""
+        import base64
+
+        from ..syllabus import html_to_text
+
+        msg = await self._get(session, acct, f"{GMAIL}/messages/{message_id}", {"format": "full"})
+        headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
+
+        def walk(part, want):
+            if part.get("mimeType") == want and part.get("body", {}).get("data"):
+                return base64.urlsafe_b64decode(part["body"]["data"] + "==").decode("utf-8", "replace")
+            for sub in part.get("parts", []) or []:
+                found = walk(sub, want)
+                if found:
+                    return found
+            return None
+
+        payload = msg.get("payload", {})
+        body = walk(payload, "text/plain")
+        if not body:
+            html_body = walk(payload, "text/html")
+            body = html_to_text(html_body) if html_body else msg.get("snippet", "")
+        return {"id": msg["id"], "thread_id": msg.get("threadId"), "headers": headers, "body": body[:6000]}
+
+    async def create_draft(self, session: Session, acct: GoogleAccount, *, to: str, subject: str, body: str,
+                           thread_id: str | None, in_reply_to: str | None, references: str | None) -> str:
+        import base64
+        from email.message import EmailMessage
+
+        m = EmailMessage()
+        m["To"] = to
+        m["From"] = acct.email or ""
+        m["Subject"] = subject
+        if in_reply_to:
+            m["In-Reply-To"] = in_reply_to
+            m["References"] = f"{references} {in_reply_to}".strip() if references else in_reply_to
+        m.set_content(body)
+        raw = base64.urlsafe_b64encode(m.as_bytes()).decode()
+        draft = await self._request(session, acct, "POST", f"{GMAIL}/drafts",
+                                    json={"message": {"raw": raw, **({"threadId": thread_id} if thread_id else {})}})
+        return draft["id"]
+
+    async def delete_draft(self, session: Session, acct: GoogleAccount, draft_id: str) -> None:
+        try:
+            await self._request(session, acct, "DELETE", f"{GMAIL}/drafts/{draft_id}")
+        except NotFound:
+            pass
+
+    async def send_draft(self, session: Session, acct: GoogleAccount, draft_id: str) -> str:
+        sent = await self._request(session, acct, "POST", f"{GMAIL}/drafts/send", json={"id": draft_id})
+        return sent.get("id", "")

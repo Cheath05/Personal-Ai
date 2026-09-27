@@ -27,7 +27,9 @@ Today is {today}.{memory}{data}"""
 ACCESS_NAMES = {"calendar": "their calendar", "email": "their inboxes (senders and subjects)",
                 "blackboard": "Blackboard due dates", "tasks": "their daily priorities and check-ins",
                 "running": "their runs, training plan and Apple Watch data",
-                "notes": "their school files and notes (matching passages are included when relevant)"}
+                "notes": "their school files and notes (matching passages are included when relevant)",
+                "apps": "which apps they used on their computers and for how long (no window titles)",
+                "web": "web search results (the most relevant pages are included below)"}
 
 MEMORY_BLOCK = """
 
