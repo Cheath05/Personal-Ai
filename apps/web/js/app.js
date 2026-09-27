@@ -2,7 +2,19 @@ import { api, DEVICE } from "./api.js";
 import { createNexus } from "./nexus.js";
 
 const $ = (id) => document.getElementById(id);
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Motion is a per-device choice. Full by default: Windows reports "reduce motion" whenever its
+// animation effects are off (often just for speed), which used to freeze the whole Nexus.
+const MOTION_KEY = "cardinal.motion";
+const MOTION_LABELS = { full: "Full", reduced: "Reduced", device: "Follow device" };
+function readMotion() { try { return localStorage.getItem(MOTION_KEY) || "full"; } catch { return "full"; } }
+const motionPref = MOTION_LABELS[readMotion()] ? readMotion() : "full";
+const reduceMotion = motionPref === "reduced"
+  || (motionPref === "device" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+document.documentElement.dataset.motion = reduceMotion ? "reduced" : "full";
+function setMotion(pref) {
+  try { localStorage.setItem(MOTION_KEY, pref); } catch { /* private mode: applies to this visit only */ }
+  location.reload();
+}
 const VIEWS = ["nexus", "today", "training", "brain", "review", "access"];
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -332,6 +344,9 @@ function buildCommands() {
     ...[["today", "Open Today"], ["training", "Open Training"], ["brain", "Open Second Brain"], ["review", "Open Review"], ["access", "Open Access"]]
       .map(([v, label]) => ({ label, hint: "View", run: () => go(v) })),
     { label: "Show usage", hint: "Tokens and cost", run: () => toggleUsage(true) },
+    ...Object.entries(MOTION_LABELS).map(([pref, name]) => ({
+      label: `Motion: ${name}`, hint: pref === motionPref ? "Current, this device" : "This device", run: () => setMotion(pref),
+    })),
   ];
 }
 function renderPalette() {

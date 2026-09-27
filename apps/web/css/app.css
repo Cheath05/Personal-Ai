@@ -302,8 +302,8 @@ details[open] summary::after { content: "–"; }
   .nexus-side, .perm { grid-template-columns: 1fr; }
   .brand b { display: none; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .panel::before, .panel::after, .light::before, .caret::after { animation: none; }
-  .view.enter, .usage-pop { animation: none; }
-  :root { transition: none; }
-}
+/* Set by app.js from the per-device Motion choice (System Call → Motion). */
+:root[data-motion="reduced"] { transition: none; }
+:root[data-motion="reduced"] .panel::before, :root[data-motion="reduced"] .panel::after,
+:root[data-motion="reduced"] .light::before, :root[data-motion="reduced"] .caret::after,
+:root[data-motion="reduced"] .view.enter, :root[data-motion="reduced"] .usage-pop { animation: none; }

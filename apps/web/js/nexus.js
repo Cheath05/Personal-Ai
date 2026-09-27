@@ -160,13 +160,6 @@ export function createNexus({ canvas, stage, agents, onSelect, reduceMotion = fa
       ctx.strokeStyle = rgba(c, al); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X, Y, R * (1.25 + rp.age * 1.5), 0, TAU); ctx.stroke();
     }
     if (th > 0.01) {
-      const sw = t * 3.4;
-      for (let w = 0; w < 10; w++) {
-        ctx.fillStyle = rgba(c, 0.05 * th * (1 - w / 10) * d);
-        ctx.beginPath(); ctx.moveTo(X, Y); ctx.arc(X, Y, R * 1.52, sw - (w + 1) * 0.07, sw - w * 0.07); ctx.closePath(); ctx.fill();
-      }
-      ctx.strokeStyle = rgba(ICE, 0.7 * th * d); ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(sw) * R * 1.52, Y + Math.sin(sw) * R * 1.52); ctx.stroke();
       ctx.font = `${Math.max(9, Math.round(R * 0.075))}px 'JetBrains Mono', monospace`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       glyphs.forEach((g, i) => {
