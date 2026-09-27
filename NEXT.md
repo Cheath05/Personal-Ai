@@ -1,42 +1,40 @@
-# Next session: ROG G14 (Windows 11)
+# Next session: hub on the Proxmox server (Phase 1.5)
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
 ## Where things stand (27 Sep 2026)
 
-- Phase 0 is done: API, brain router, usage readout, Nexus web app. 27 tests pass.
-- Phase 1 on the Mac is done: Ollama runs at login with `qwen3:4b-instruct` (~29 tok/s). A real chat ran locally in ~4 s for $0.
-- Branch: `cardinal-foundation` (pushed). `main` is still the initial commit.
-- No Claude API key is set, so everything runs locally.
+- **Phase 0 done:** API, brain router, usage readout, Nexus web app. 27 tests pass on the Mac and on Windows.
+- **Mac:** Ollama runs at login with `qwen3:4b-instruct` (~29 tok/s). A real chat ran locally in ~4 s for $0.
+- **G14:**
+  - `qwen3:8b` runs fully on the GPU at ~44–46 tok/s with `"think": false`.
+  - A loaded model uses ~7.2 of the 8 GB of VRAM, so GPU voice won't fit beside it.
+  - `OLLAMA_HOST=0.0.0.0` is set. The firewall rule "Ollama (Cardinal, Mac over WireGuard)" allows TCP 11434 only from 10.10.20.3.
+  - The tray app didn't start the server on first launch, so `ollama serve` was started by hand. Check that Ollama starts after a reboot.
+- **Mac → G14 test failed.** `curl http://10.10.20.6:11434` timed out from the Mac (10.10.20.3), although the Mac reaches Proxmox (10.10.10.5) fine over the same WireGuard tunnel. Two WireGuard clients can't reach each other, either because of the OPNsense rules or the G14 tunnel's AllowedIPs.
+  - **Decision:** don't change WireGuard or OPNsense. Put Tailscale on every device instead, which the hub needs anyway.
+- **Hub decision:** the Proxmox Ubuntu VM hosts the hub for now. An M6 Mac mini (24–32 GB) may replace it later; that only means re-running the setup and editing `brains.yaml`.
+- Branch: `cardinal-foundation` (pushed). `main` is still the initial commit. No Claude API key is set.
 
-## G14 results (27 Sep 2026)
+## Steps for this session
 
-- Ollama 0.34.4 and uv are installed. `qwen3:8b` runs 100% on the GPU (5.6 GB) at **~44–46 tok/s**, about 1 s for a short answer. `"think": false` works, so no instruct variant is needed.
-- A loaded model uses ~7.2 of the 8 GB of VRAM, so GPU voice (Phase 1.6) won't fit beside it.
-- Reached over WireGuard: G14 `10.10.20.6`, Mac `10.10.20.3`. `OLLAMA_HOST=0.0.0.0`, plus the firewall rule "Ollama (Cardinal, Mac over WireGuard)", which allows TCP 11434 only from 10.10.20.3 on the `Home_lab` tunnel (Windows labels the tunnel Public).
-- All 27 tests pass on Windows. `scripts/dev.ps1` is the PowerShell version of `dev.sh`.
-- **Next, on the Mac:** `curl http://10.10.20.6:11434/api/version`, then set the g14 `url` in `brains.yaml` to `http://10.10.20.6:11434` and check the Access view. If `curl` hangs, WireGuard isn't forwarding traffic between clients (an OPNsense setting; ask before touching it).
-- After a reboot, check that the G14 is still reachable. On first launch the tray app didn't start the server, so `ollama serve` was started by hand.
+PLAN.md §3 has the details.
 
-## Goal for the Windows session
-
-Make the G14 Cardinal's fast brain (Phase 1, second half):
-
-1. Install Ollama for Windows and run `ollama pull qwen3:8b`. The 8B model fits the RTX 4060's 8 GB of VRAM.
-2. Check that thinking can be turned off. `qwen3:8b` is a hybrid model, so `"think": false` should give direct answers. If it doesn't, try the `qwen3:8b` instruct variant, as we did on the Mac, where plain `qwen3:4b` turned out to be thinking-only.
-3. Let other machines reach it:
-   - Set the user environment variable `OLLAMA_HOST=0.0.0.0` and restart Ollama.
-   - Allow TCP 11434 in Windows Firewall, **Private networks only**.
-4. Measure tokens per second, so the numbers can be compared with the Mac's.
-5. On the Mac, copy `brains.example.yaml` to `brains.yaml` and set the g14 `url` to the G14's LAN IP. Then check the Access view shows it Online and that chats route to "ROG G14 · RTX 4060".
-6. Optional: run the web app on Windows to test it in Edge/Chrome. `scripts/dev.sh` is bash, so add a PowerShell version (`scripts/dev.ps1`). uv works on Windows.
+1. **Resize the VM in Proxmox:** 4 vCPU, 10 GB RAM with ballooning off, and 100 GB disk. Then grow the disk inside Ubuntu.
+2. **Tailscale admin console:** turn on MagicDNS and HTTPS Certificates.
+3. **On the VM:** clone the repo to `~/cardinal` and run `infra/setup-hub.sh`. If the repo is private, git asks for a GitHub username and a personal access token.
+4. **Tailscale on the G14, Mac and iPhone:**
+   - Rename the machines `g14` and `mac` in the admin console.
+   - Add the G14 firewall rule for `100.64.0.0/10` (command in PLAN §3).
+5. **Check:**
+   - Open `https://cardinal.<tailnet>.ts.net` from the Mac. The Access view should show the G14 and the server Online.
+   - Send a chat and confirm it routes to the G14.
+   - Turn the G14 off and confirm the server answers.
+6. **iPhone:** Add to Home Screen from Safari.
+7. The hub is now the only place memory lives. Stop using `./scripts/dev.sh` on the laptops except for development. The Mac's `data/cardinal.db` is empty, so there's nothing to copy.
 
 ## Things to keep in mind
 
-- **One memory.** The hub (API + `data/cardinal.db`) lives on the Mac until Phase 1.5. A Cardinal started on Windows gets its own empty database. That's fine for testing, but real use should point at the one hub.
-- **Don't keep the G14 on all the time.** When it's off, the router falls back to the Mac, then the server, then Claude within the $20 cap.
-- **Hub decision pending.** The choice is between the Proxmox VM (free, PLAN.md §2.6) and an M6 Mac mini:
-  - With 24–32 GB, the mini would be the always-on hub *and* the main brain, able to run models up to ~30B.
-  - With only 16 GB, it mainly adds "always on".
-  - Either way, the code change is a new entry in `brains.yaml`.
-- **Ground rules:** never commit `.env` or API keys, and don't touch OPNsense/WireGuard. Every agent action must be previewed and approved (trust rules come in Phase 2).
+- Don't keep the G14 on all the time. When it's off, the router falls back to the Mac, then the server, then Claude within the $20 cap.
+- Never commit `.env` or API keys. Don't touch OPNsense/WireGuard; ask first if something seems to need it.
+- Every agent action must be previewed and approved. Trust rules come in Phase 2.

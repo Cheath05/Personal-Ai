@@ -175,7 +175,8 @@ A model's weights don't change on their own as you use it. Cardinal gets better 
 **Where the hub lives:**
 
 - **Now:** on the Mac, for testing.
-- **Next (Phase 1.5):** on the Proxmox VM, where it's always on. Moving it is a file copy: `data/cardinal.db` goes to the server.
+- **Next (Phase 1.5, decided):** on the Proxmox VM, where it's always on. Moving it is a file copy: `data/cardinal.db` goes to the server.
+- **Maybe later:** an M6 Mac mini with 24–32 GB could be both the hub and the main brain. Moving there is the same setup plus a `brains.yaml` edit.
 
 ### 2.6 Is the Proxmox server still worth it? Yes, as the hub
 
@@ -210,6 +211,7 @@ Nothing changes on OPNsense or WireGuard. The only work on the server is on the 
 **1. Resize the idle Ubuntu VM in Proxmox:**
 
 - 4 vCPU (type `host`), **10 GB RAM** with ballooning off (a local model runs here), 100 GB disk (`qm resize <vmid> scsi0 +80G`).
+- At the current 2 GB the server brain can't load. Cardinal still runs, using the G14 and Claude.
 - Then, inside Ubuntu:
   ```
   sudo growpart /dev/sda 3
@@ -217,25 +219,39 @@ Nothing changes on OPNsense or WireGuard. The only work on the server is on the 
   sudo lvextend -r -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
   ```
 
-**2. Install Docker, then copy the same `docker-compose.yml` you tested on the Mac.**
+**2. Create a free Tailscale account,** then open the DNS page in the admin console and turn on **MagicDNS** and **HTTPS Certificates**.
 
-**3. Install Tailscale on the Ubuntu VM.** It only makes outbound connections, so OPNsense needs no port forwards or rule changes. If a direct connection isn't possible, it falls back to Tailscale's relays automatically.
-
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --hostname=cardinal --ssh
-```
-
-**4. In the Tailscale admin console,** open the DNS page and turn on **MagicDNS** and **HTTPS Certificates**.
-
-**5. Serve the app over HTTPS.** The iPhone needs HTTPS for the microphone, notifications and installing the app. Assuming the web app listens on port 3000:
+**3. Run the setup script on the VM.** No Docker is needed.
 
 ```bash
-sudo tailscale serve --bg 3000
-# App is now at https://cardinal.<your-tailnet>.ts.net
+sudo apt install -y git
+git clone -b cardinal-foundation https://github.com/Cheath05/Personal-Ai.git ~/cardinal
+~/cardinal/infra/setup-hub.sh
 ```
 
-**6. Install the Tailscale app** on your iPhone, Mac and Windows PC and sign in with the same account.
+[`infra/setup-hub.sh`](infra/setup-hub.sh) does the following:
+
+- Installs uv, the app, and Ollama with Qwen3 4B, the server brain. Ollama listens on localhost only.
+- Creates `.env` and a hub `brains.yaml`.
+- Runs Cardinal as a `systemd` service on `127.0.0.1:8000`.
+- Adds a nightly database backup to `~/cardinal-backups`, keeping 14 days.
+- Installs Tailscale, signs in as `cardinal`, and serves the app over HTTPS at `https://cardinal.<your-tailnet>.ts.net`.
+
+Tailscale only makes outbound connections, so OPNsense needs no port forwards or rule changes. Run the script again whenever you want to update: it pulls the latest code and restarts.
+
+**4. Install the Tailscale app** on your iPhone, Mac and G14, signed in to the same account.
+
+- In the admin console, rename the laptops to **`g14`** and **`mac`**. The hub's `brains.yaml` reaches them by those names.
+- On the G14, allow Ollama from Tailscale. In an admin PowerShell:
+
+  ```powershell
+  New-NetFirewallRule -DisplayName "Ollama (Cardinal, Tailscale)" -Direction Inbound -Protocol TCP -LocalPort 11434 -RemoteAddress 100.64.0.0/10 -Action Allow
+  ```
+
+  Only your own devices have addresses in that range.
+- The Mac brain is optional. It needs Ollama exposed to the network, which isn't set up yet. Until then the hub skips it, and replies come from the server brain whenever the G14 is off.
+
+**5. On the iPhone:** open the `https://cardinal…ts.net` address in Safari, then Share → **Add to Home Screen**.
 
 **Optional:** Tailscale can also reach your Proxmox UI, with nothing changed on OPNsense.
 
@@ -481,7 +497,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | Phase | Where | Deliverable |
 |---|---|---|
 | 0. Foundation ✅ | Mac | Repo, FastAPI + SQLite, web app (no build step), Nexus canvas, brain router with budget guard, usage tracking and readout, chat with every agent |
-| 1. Local brains | Mac ✅ + G14 | Ollama on the Mac (Qwen3 4B instruct) ✅ and the G14 (Qwen3 8B, next session) |
+| 1. Local brains ✅ | Mac + G14 | Ollama on the Mac (Qwen3 4B instruct, ~29 tok/s) and the G14 (Qwen3 8B on the GPU, ~45 tok/s) |
 | **1.5. Hub on Proxmox** | Server | Move the hub and database to the Ubuntu VM, Tailscale HTTPS, install on the iPhone, background brain on the server CPU, nightly backups. Moved up from Phase 7 so all devices share one memory early. |
 | 1.6. Voice | Mac + G14 + iPhone | Pipecat voice (Whisper, Kokoro, Chatterbox-Turbo), talking to agents out loud |
 | 2. Life Dashboard | Mac | Google Calendar, personal Gmail + UMBC, Blackboard feed, Ordinal's briefing, Action Preview queue + **trust rules** |
@@ -500,7 +516,7 @@ services/api/        FastAPI app (Python, uv): agents, brain router, usage, late
   config/            agents.yaml, routing.yaml, brains.example.yaml (brains.yaml is git-ignored)
 services/voice/      Pipecat pipeline and speech engine adapters (Phase 1)
 scripts/dev.sh       Run it locally
-infra/               Server deploy: systemd or Docker, Tailscale notes, backups (Phase 1.5)
+infra/               Server setup script (systemd, Tailscale HTTPS, nightly backups)
 design/              Concept page; reference screenshots are local-only
 data/                Local SQLite database (git-ignored); Postgres on the server
 ```

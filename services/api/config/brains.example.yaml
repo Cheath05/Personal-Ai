@@ -4,7 +4,7 @@
 
 local:
   g14:
-    url: "http://g14.local:11434"        # ROG G14 on your home network (or its Tailscale name)
+    url: "http://g14:11434"              # ROG G14 by its Tailscale name (or its LAN IP)
     model: "qwen3:8b"                     # hybrid model; Cardinal turns its thinking mode off
     label: "ROG G14 · RTX 4060"
   mac:

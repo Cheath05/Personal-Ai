@@ -61,6 +61,18 @@ cp services/api/config/brains.example.yaml services/api/config/brains.yaml
 
 `brains.yaml` is git-ignored. The Access view shows which brains are online.
 
+## Host it on the Proxmox server (the hub)
+
+On the Ubuntu VM, as your normal user:
+
+```bash
+sudo apt install -y git
+git clone -b cardinal-foundation https://github.com/Cheath05/Personal-Ai.git ~/cardinal
+~/cardinal/infra/setup-hub.sh      # run again any time to update
+```
+
+Cardinal then runs around the clock at `https://cardinal.<your-tailnet>.ts.net`, with nightly database backups. See PLAN.md §3 for the VM size and the Tailscale steps.
+
 ## Tests
 
 ```bash
