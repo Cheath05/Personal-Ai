@@ -12,3 +12,9 @@ design/reference/*
 node_modules/
 __pycache__/
 .venv/
+
+# Local data and machine-specific config
+data/
+services/api/config/brains.yaml
+.pytest_cache/
+*.db

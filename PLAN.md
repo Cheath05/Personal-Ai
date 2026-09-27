@@ -145,6 +145,18 @@ The server has no GPU, but your devices do. Each time the app connects, it check
 - **Personalizing a local model:** later, a small free model can be fine-tuned on **your own** data (your notes, your writing, your check-ins, your approvals) on the G14. Claude's answers are **not** used as training data, because Anthropic's terms don't allow using Claude outputs to train other AI models.
 - **Hardware:** an eventual always-on GPU box (even a used RTX 3060 12 GB in the server) would let a stronger local model run 24/7 and make Claude unnecessary.
 
+### 2.4 How the agents adapt to you
+
+A model's weights don't change on their own as you use it. Cardinal gets better at being *your* assistant in these ways, and all of them work with free local models:
+
+| Mechanism | What it learns | When |
+|---|---|---|
+| **Core Memory** (Sigma) | Facts and patterns with evidence, such as "best focus 9–11 AM" or "skips evening runs". The relevant ones go into every agent's instructions. | Nightly, from Phase 3 |
+| **Your examples** | Drafts you edited, suggestions you accepted or rejected, how you phrase things. Close examples are shown to the model when it writes something similar. | From Phase 2 |
+| **Router feedback** | Which jobs local handles well. Every "Ask Claude instead" tap and every failed check is counted. | Now |
+| **Trust rules** | Which actions you're happy to let run automatically | Phase 2 |
+| **Fine-tuning (optional)** | A small model trained on *your own* data (notes, writing, check-ins) on the G14, a few times a semester | After Phase 6 |
+
 ## 3. Server (last phase)
 
 Nothing changes on OPNsense or WireGuard. The only work on the server is on the Ubuntu VM.
@@ -415,13 +427,14 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | Status colors | Nominal `#4DFFA6` · Degraded `#FFC24D` · Offline `#FF5470` (always with a text label) |
 | Type | Michroma for display, Oxanium for the interface, JetBrains Mono for readouts |
 | Navigation | Six views (Nexus, Today, Training, Brain, Review, Access), each with a few focused panels. The approval queue opens in a drawer. ⌘K opens System Call. |
+| Usage readout | A low-key `tokens · $` line at the top right. Click it for local versus Claude tokens, spend against the cap, credit left, a month-end projection and the top agents. |
 | Motion | Views fade in with a short blur-in. The node swap uses easing and a burst ring. Everything calms down when your device asks for reduced motion. |
 
 ## 10. Build order
 
 | Phase | Where | Deliverable |
 |---|---|---|
-| 0. Foundation | Mac | Monorepo, Docker Compose, Postgres, PWA shell, **Nexus canvas and glass component library** |
+| 0. Foundation ✅ | Mac | Repo, FastAPI + SQLite, web app (no build step), Nexus canvas, brain router with budget guard, usage tracking and readout, chat with every agent |
 | 1. Brain + Voice | Mac + G14 | Ollama + Qwen3 on the G14 and Mac, the brain router, Pipecat voice (Whisper, Kokoro, Chatterbox-Turbo), talking to Cardinal |
 | 2. Life Dashboard | Mac | Google Calendar, personal Gmail + UMBC, Blackboard feed, Ordinal's briefing, Action Preview queue + **trust rules** |
 | 3. Executive Assistant | Mac | Delta check-ins and weekly rollup, Core Memory v1 |
@@ -433,13 +446,15 @@ Then approve the route in the admin console. This matters because an iPhone can 
 ## 11. Repo layout
 
 ```
-apps/web/            Next.js PWA: Nexus canvas, glass components, views
-apps/link/           Cardinal Link (Tauri): local GPU voice, ActivityWatch bridge
-services/api/        FastAPI: auth, REST, WebSocket, OAuth, health webhook, Action Preview
-services/agents/     Agent definitions, tool servers, scheduler
-services/voice/      Pipecat pipeline, speech engine adapters (Chatterbox, Kokoro, Whisper)
-infra/               docker-compose.yml, Tailscale notes, backups
-design/reference/    Reference screenshots (local only, git-ignored)
+apps/web/            Web app: plain HTML/CSS/JS modules, no build step or Node.js, served by the API
+apps/link/           Cardinal Link (Tauri): local GPU voice, device tools, ActivityWatch bridge (Phase 6)
+services/api/        FastAPI app (Python, uv): agents, brain router, usage, later integrations
+  config/            agents.yaml, routing.yaml, brains.example.yaml (brains.yaml is git-ignored)
+services/voice/      Pipecat pipeline and speech engine adapters (Phase 1)
+scripts/dev.sh       Run it locally
+infra/               Server deploy: Docker Compose, Tailscale notes, backups (Phase 7)
+design/              Concept page; reference screenshots are local-only
+data/                Local SQLite database (git-ignored); Postgres on the server
 ```
 
 ## 12. Setup you'll need (before Phase 1)

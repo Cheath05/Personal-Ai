@@ -1,0 +1,23 @@
+# How each kind of job is routed.
+#   policy: local             only local brains
+#           claude            Claude first (falls back to local when over budget)
+#           local_then_claude local, escalating to Claude if the result fails its checks
+#   lane:   interactive | background  (which local brain order to use)
+#   tier:   default | cheap | deep    (which Claude model, from brains.yaml)
+#   effort: low | medium | high       (Claude effort; ignored for Haiku)
+
+# When the month's spend passes the soft cap, only these jobs may still use Claude
+# (plus anything you explicitly send with "Ask Claude instead").
+essential_jobs: [weekly_rollup]
+
+local_attempts: 2
+
+jobs:
+  chat:          { policy: local_then_claude, lane: interactive, tier: default, effort: medium, max_tokens: 900 }
+  quick:         { policy: local,             lane: interactive, max_tokens: 400 }
+  briefing:      { policy: local,             lane: background,  max_tokens: 1200 }
+  triage:        { policy: local,             lane: background,  max_tokens: 600 }
+  checkin:       { policy: local,             lane: interactive, max_tokens: 800 }
+  plan_week:     { policy: local_then_claude, lane: interactive, tier: default, effort: high, max_tokens: 2000 }
+  weekly_rollup: { policy: claude,            lane: background,  tier: deep,    effort: high, max_tokens: 3000 }
+  long_doc:      { policy: claude,            lane: background,  tier: cheap,   max_tokens: 2000 }
