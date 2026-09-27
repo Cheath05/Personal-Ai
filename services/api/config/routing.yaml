@@ -21,6 +21,11 @@ jobs:
   rollup_now:    { policy: local_then_claude, lane: interactive, tier: deep, effort: high, max_tokens: 2000 }  # "Write it now"
   sigma_patterns: { policy: local,            lane: background,  max_tokens: 600 }    # nightly Core Memory candidates
   tool_plan:     { policy: local,             lane: interactive, max_tokens: 400 }    # which tools a chat message needs, as JSON
+  notes_digest:  { policy: local,             lane: interactive, max_tokens: 1400 }   # points, key terms and flashcards, as JSON
+  notes_overview: { policy: local,            lane: interactive, max_tokens: 400 }
+  notes_answer:  { policy: local_then_claude, lane: interactive, tier: default, effort: medium, max_tokens: 1000 }
+  quiz:          { policy: local,             lane: interactive, max_tokens: 1800 }   # practice-test questions, as JSON
+  quiz_check:    { policy: local,             lane: interactive, max_tokens: 20 }     # re-solve each question to verify its answer key
   triage:        { policy: local,             lane: background,  max_tokens: 600 }
   checkin:       { policy: local,             lane: interactive, max_tokens: 800 }
   plan_week:     { policy: local_then_claude, lane: interactive, tier: default, effort: high, max_tokens: 2000 }

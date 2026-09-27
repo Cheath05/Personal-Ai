@@ -1,5 +1,6 @@
 import { api, DEVICE } from "./api.js";
 import { createActions } from "./actions.js";
+import { createBrain } from "./brain.js";
 import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
 import { createReview } from "./review.js";
@@ -28,6 +29,7 @@ let calendar = null;
 let actions = null;
 let reviewUI = null;
 let runningUI = null;
+let brainUI = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -71,6 +73,7 @@ function go(view) {
   if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); }
   if (view === "review") reviewUI?.refresh();
   if (view === "training") runningUI?.refresh();
+  if (view === "brain") brainUI?.refresh();
 }
 
 /* ---------- Agent selection ---------- */
@@ -154,6 +157,7 @@ function messageEl(m, route) {
 const CHANGE_ICON = { done: "✓", proposed: "⏳", failed: "✗" };
 const ACTION_LINE = { executed: "✓ Authorized", denied: "Denied", undone: "Undone", failed: "✗ Failed", expired: "Expired" };
 function appendChanges(div, m) {
+  appendSources(div, m);
   const changes = m.changes || [];
   const actions = m.actions || [];
   if (!changes.length && !actions.length) return;
@@ -171,6 +175,19 @@ function appendChanges(div, m) {
   });
   div.append(box);
 }
+// Passages from your notes the reply cited: tap to open the page in the Second Brain.
+function appendSources(div, m) {
+  if (!m.sources?.length) return;
+  const row = el("div", "msg-sources");
+  m.sources.forEach((src) => {
+    const b = el("button", "src-chip", `[${src.n}] ${src.title}, p. ${src.page}`);
+    b.type = "button";
+    b.addEventListener("click", () => { go("brain"); brainUI?.openDoc(src.document_id, src.page); });
+    row.append(b);
+  });
+  div.append(row);
+}
+
 function actionsCard(a, onDone) {
   return actions ? actions.card(a, { inChat: true, onDone }) : el("p", "change proposed", `⏳ ${a.title}`);
 }
@@ -598,6 +615,8 @@ function buildCommands() {
     { label: "Show usage", hint: "Tokens and cost", run: () => toggleUsage(true) },
     { label: "Suggest study time", hint: "Axiom", run: () => { go("today"); $("plan-now").click(); } },
     { label: "Check in with Delta", hint: "Review", run: () => go("review") },
+    { label: "Review flashcards", hint: "Second Brain", run: () => { go("brain"); setTimeout(() => $("br-review").click(), 300); } },
+    { label: "Ask my notes", hint: "Second Brain", run: () => { go("brain"); $("br-ask").question.focus(); } },
     ...Object.entries(MOTION_LABELS).map(([pref, name]) => ({
       label: `Motion: ${name}`, hint: pref === motionPref ? "Current, this device" : "This device", run: () => setMotion(pref),
     })),
@@ -657,6 +676,7 @@ async function boot() {
   });
   reviewUI.refreshChip();
   runningUI = createRunning({ toast, onChange: () => actions.refresh() });
+  brainUI = createBrain({ toast, openDates: (job) => calendar.openImportJob(job), goReview: () => go("review") });
   setInterval(() => { if (!document.hidden) { actions.refresh(); reviewUI.refreshChip(); } }, 60000);
   $("ci-chip").addEventListener("click", () => go("review"));
   $("ok-chip").addEventListener("click", () => go("today"));

@@ -13,7 +13,7 @@ agents:
     role: Your main contact. Plans your day, hands work to the team, resolves conflicts and time-blocks your calendar.
     sees: [Calendar, School and personal email, Blackboard, School folder, Tasks, Health (selected), App usage, Core Memory, Journal]
     changes: [Add or move calendar blocks, Change or reschedule tasks, Send an email you approved, Move a run, Move or rename files, Start another agent]
-    access: [calendar, email, blackboard, tasks, running]
+    access: [calendar, email, blackboard, tasks, running, notes]
     persona: >
       You are the chief of staff. You are calm, direct and organized. You think in priorities and trade-offs,
       and you hand specialist questions to the right teammate: Ordinal (briefings), Relay (email), Axiom (school
@@ -59,7 +59,7 @@ agents:
     role: Reads your school files and writes notes, flashcards and practice tests. Answers with page citations.
     sees: [School folder, Blackboard, Your notes, Calendar]
     changes: [Add study blocks, Add deadlines to tasks]
-    access: [calendar, blackboard]
+    access: [calendar, blackboard, notes]
     persona: >
       You are a patient tutor. You explain at the level asked (simple, class level or deep), use short worked
       examples, and offer a quick practice question at the end when it helps.

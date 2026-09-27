@@ -223,11 +223,84 @@
 
     <!-- ================= BRAIN ================= -->
     <main class="view" id="v-brain" hidden>
-      <div class="vhead"><div><h1>Second Brain</h1><p>Your school folder, notes, flashcards and Core Memory.</p></div><span class="who">AXIOM [AXM3-0314] · SIGMA [SGM6-1089]</span></div>
-      <section class="panel soon">
-        <div class="ph"><span class="t">Arrives in Phase 5</span><span class="m">SECOND BRAIN</span></div>
-        <p>Drop files into one folder and Axiom files them, writes summaries and flashcards, and answers with page citations. You can already ask Axiom to explain concepts in the Nexus.</p>
-      </section>
+      <div class="vhead"><div><h1>Second Brain</h1><p id="br-line">Your school files, searchable and turned into notes, flashcards and practice tests.</p></div><span class="who">AXIOM [AXM3-0314] · SIGMA [SGM6-1089]</span></div>
+      <div class="grid two brain">
+        <section class="panel neon span-all">
+          <div class="ph"><span class="t">Ask your notes</span><span class="m">ANSWERS CITE THE PAGE</span></div>
+          <form id="br-ask" class="br-ask">
+            <textarea name="question" rows="1" maxlength="2000" placeholder="e.g. How do AVL trees stay balanced?"></textarea>
+            <div class="br-ask-row">
+              <div class="seg" role="radiogroup" aria-label="Explanation level" id="br-level">
+                <button type="button" data-level="simple" aria-selected="false">Simple</button>
+                <button type="button" data-level="class" aria-selected="true">Class</button>
+                <button type="button" data-level="deep" aria-selected="false">Deep</button>
+              </div>
+              <select name="course" class="br-course" aria-label="Course"><option value="">All courses</option></select>
+              <button type="submit" class="btn primary">Ask Axiom</button>
+            </div>
+          </form>
+          <div id="br-answer" hidden></div>
+        </section>
+
+        <section class="panel">
+          <div class="ph"><span class="t">Flashcards</span><span class="m" id="br-cards-meta">SPACED REPETITION</span></div>
+          <div class="br-due"><b id="br-due">–</b><span>due now</span></div>
+          <p class="note small" id="br-cards-line"></p>
+          <div class="row-actions"><button type="button" class="btn primary" id="br-review">Start review</button></div>
+          <details class="br-add-card"><summary>Add a card</summary>
+            <form id="br-card-form" class="rv-form">
+              <input name="front" maxlength="300" placeholder="Question" required>
+              <textarea name="back" rows="2" maxlength="600" placeholder="Answer" required></textarea>
+              <div class="inline-add"><select name="course" class="br-course" aria-label="Course"><option value="">No course</option></select>
+                <button type="submit" class="btn">Add</button></div>
+            </form>
+          </details>
+        </section>
+
+        <section class="panel">
+          <div class="ph"><span class="t">Exam mode</span><span class="m">PRACTICE TEST</span></div>
+          <p class="note small">A multiple-choice test written from your files. Questions you miss become flashcards.</p>
+          <form id="br-quiz-form" class="inline-add">
+            <select name="course" class="br-course" aria-label="Course"><option value="">All courses</option></select>
+            <select name="count" aria-label="Questions"><option value="5">5 questions</option><option value="8" selected>8 questions</option><option value="12">12 questions</option></select>
+            <button type="submit" class="btn primary">Start</button>
+          </form>
+          <p class="note small" id="br-quiz-note"></p>
+          <ul class="list" id="br-quizzes"></ul>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">Library</span><span class="m" id="br-lib-meta">SCHOOL FOLDER</span></div>
+          <form id="br-upload" class="br-upload">
+            <label class="drop" id="br-drop"><input type="file" name="files" multiple accept=".pdf,.pptx,.docx,.txt,.md,.html,image/*">
+              <b>Add files</b><span>PDF, slides (.pptx), Word (.docx), text, or photos of notes. Drop them here or tap to choose.</span></label>
+            <div class="inline-add"><input name="course" maxlength="20" placeholder="Course (optional, e.g. CMSC 341)" list="br-course-list">
+              <button type="submit" class="btn primary">Upload</button></div>
+            <datalist id="br-course-list"></datalist>
+          </form>
+          <details class="br-paste"><summary>Paste notes or add a link</summary>
+            <form id="br-note-form" class="rv-form">
+              <input name="title" maxlength="120" placeholder="Title (optional)">
+              <input name="url" type="url" placeholder="Link to a web page or public Google Doc (optional)">
+              <textarea name="text" rows="4" placeholder="…or paste notes here"></textarea>
+              <div class="inline-add"><input name="course" maxlength="20" placeholder="Course (optional)" list="br-course-list">
+                <button type="submit" class="btn">Add</button></div>
+            </form>
+          </details>
+          <p class="note small" id="br-upload-note"></p>
+          <div id="br-library"></div>
+        </section>
+
+        <section class="panel span-all">
+          <div class="ph"><span class="t">Core Memory</span><span class="m" id="br-mem-meta">KEPT BY SIGMA</span></div>
+          <div class="fluct">
+            <svg id="br-ring" viewBox="0 0 320 320" role="img" aria-label="Core Memory: one square per thing Cardinal knows about you"></svg>
+            <div class="fluct-side"><p class="note small">One square for each thing Cardinal knows about you. Hover or tap a square to read it. Brighter means more certain.</p>
+              <p class="fluct-read" id="br-mem-read">–</p>
+              <p class="note small"><button type="button" class="linkish" id="br-mem-edit">Edit Core Memory in Review</button></p></div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <!-- ================= REVIEW ================= -->
@@ -363,6 +436,30 @@
     <p class="note small">You can revoke it any time in Access → Trust rules.</p>
     <div class="row-actions"><button type="button" class="btn primary" id="rule-yes">Allow and do it now</button>
       <button type="button" class="btn" data-close>Cancel</button></div>
+  </dialog>
+
+  <!-- Second Brain: a document -->
+  <dialog class="sheet wide" id="doc-dialog" aria-labelledby="doc-h">
+    <div class="sheet-head"><h3 id="doc-h">–</h3><button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <div class="doc-meta" id="doc-meta"></div>
+    <div class="seg" role="tablist" id="doc-tabs">
+      <button type="button" data-tab="summary" aria-selected="true">Summary</button>
+      <button type="button" data-tab="cards" aria-selected="false">Flashcards</button>
+      <button type="button" data-tab="pages" aria-selected="false">Pages</button>
+    </div>
+    <div id="doc-body" class="doc-body"></div>
+  </dialog>
+
+  <!-- Second Brain: flashcard review -->
+  <dialog class="sheet" id="card-dialog" aria-label="Flashcard review">
+    <div class="sheet-head"><h3 id="card-h">Review</h3><button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <div id="card-body"></div>
+  </dialog>
+
+  <!-- Second Brain: practice test -->
+  <dialog class="sheet wide" id="quiz-dialog" aria-label="Practice test">
+    <div class="sheet-head"><h3 id="quiz-h">Practice test</h3><button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <div id="quiz-body"></div>
   </dialog>
 
   <!-- Calendar: add an item -->

@@ -368,5 +368,23 @@ export function createCalendar({ toast, onChange, onProposal }) {
     if (line && st.top) line.style.top = `${st.top(minutesOf(new Date().toISOString()))}px`;
   }, 60000);
 
-  return { load, refresh: () => load(st.date, true) };
+  // Open the review dialog for a date-finding job started elsewhere (e.g. "Find dates" on a Brain document).
+  function openImportJob(job) {
+    clearTimeout(st.sylTimer);
+    st.syl = job;
+    sylForm.hidden = true;
+    $("syl-review").hidden = true;
+    $("syl-dialog").showModal();
+    $("syl-review").hidden = false;
+    $("syl-list").replaceChildren(el("p", "note", "Axiom is reading it for dates…"));
+    $("syl-count").textContent = "Reading…";
+    (async function wait() {
+      try { st.syl = await api.syllabus(job.id); } catch (e) { $("syl-count").textContent = e.message; return; }
+      if (st.syl.status === "reading") { $("syl-count").textContent = st.syl.detail || "Reading…"; st.sylTimer = setTimeout(wait, 1500); return; }
+      if (st.syl.status === "failed") { $("syl-list").replaceChildren(el("p", "note", st.syl.detail)); $("syl-count").textContent = "Couldn't read it"; return; }
+      showReview(st.syl);
+    })();
+  }
+
+  return { load, refresh: () => load(st.date, true), openImportJob };
 }

@@ -535,6 +535,19 @@ def memory_state(ctx: Ctx) -> str:
     return "\n".join(f"[memory {m.id}] {m.text}" for m in rows) or "Core Memory is empty."
 
 
+# ---------- Second Brain (Axiom) ----------
+
+async def t_flashcard(ctx: Ctx, a: dict) -> Result:
+    from .db import Flashcard
+    front, back = str(a.get("front") or "").strip(), str(a.get("back") or "").strip()
+    if not front or not back:
+        raise ToolError("A flashcard needs a question and an answer.")
+    course = re.sub(r"\s+", " ", str(a.get("course") or "").strip().upper())[:20] or None
+    ctx.session.add(Flashcard(front=front[:300], back=back[:600], course=course, source="you"))
+    ctx.session.commit()
+    return Result(True, f"Made a flashcard: \"{front[:80]}\". It's in today's review on the Brain page.")
+
+
 # ---------- The registry ----------
 
 CAL = ("axiom", "cardinal")
@@ -553,6 +566,10 @@ TOOLS = [
          {"id": ("item", "item_id"), "start": ("time",)}),
     Tool("remove_calendar_item", CAL, "Remove an item (waits for OK) or withdraw a proposal.",
          {"id": "e.g. 'item 12' or 'proposal 9'", "title": "its title, if you don't know the id"}, t_remove, "", {"id": ("item", "item_id")}),
+    Tool("make_flashcard", ("axiom",), "Make a flashcard for spaced-repetition review.",
+         {"front": "the question", "back": "the answer", "course": "optional, like CMSC 341"}, t_flashcard,
+         '"make a flashcard: what is a BST? a tree where left < node < right" -> make_flashcard(front "What is a BST?", back "A tree where left < node < right")',
+         {"front": ("question", "q"), "back": ("answer", "a")}),
     Tool("set_study_hours", ("axiom",), "Set the hours study blocks may be planned in.",
          {"earliest": "HH:MM", "latest": "HH:MM"}, t_study_hours, '"don\'t plan studying after 9pm" -> set_study_hours(latest 21:00)'),
     Tool("suggest_study_time", ("axiom",), "Check due dates now and propose study blocks.", {}, t_suggest_study,

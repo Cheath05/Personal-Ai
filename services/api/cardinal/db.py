@@ -26,6 +26,7 @@ class Message(SQLModel, table=True):
     device: str | None = None  # where you were when you sent it ("iPhone", "Mac", ...); memory is shared
     action_ids: str | None = None  # JSON list: changes this reply proposed or made (shown as cards in the chat)
     changes: str | None = None  # JSON list of {status, text}: what the tools actually did, shown under the reply
+    sources: str | None = None  # JSON list of passages from your notes the reply could cite
 
 
 class UsageEvent(SQLModel, table=True):
@@ -264,6 +265,66 @@ class Pref(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class Document(SQLModel, table=True):
+    """A file in your Second Brain: lecture slides, a PDF, notes, a photo of a whiteboard."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    course: str | None = Field(default=None, index=True)
+    kind: str = "file"  # pdf | slides | doc | image | text | link
+    filename: str | None = None
+    path: str | None = None  # the original, kept on the hub (data/files/)
+    source_url: str | None = None
+    pages: int = 0
+    status: str = "reading"  # reading | summarizing | ready | failed
+    detail: str | None = None
+    summary: str | None = None
+    terms: str = "[]"  # JSON glossary: [{term, definition, page}]
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class Passage(SQLModel, table=True):
+    """A searchable piece of a document, with the page it came from (for citations)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    document_id: int = Field(index=True)
+    page: int = 1
+    position: int = 0
+    text: str
+
+
+class Flashcard(SQLModel, table=True):
+    """A card, scheduled with FSRS spaced repetition. `fsrs` holds the scheduler's state."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    document_id: int | None = Field(default=None, index=True)
+    course: str | None = Field(default=None, index=True)
+    front: str
+    back: str
+    page: int | None = None
+    source: str = "axiom"  # axiom | you | quiz
+    due: datetime = Field(default_factory=utcnow, index=True)
+    fsrs: str = "{}"
+    reviews: int = 0
+    lapses: int = 0
+    suspended: bool = False
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Quiz(SQLModel, table=True):
+    """A practice test (exam mode): questions from your documents, your answers and the score."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    course: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    status: str = "writing"  # writing | ready | done | failed
+    detail: str | None = None
+    questions: str = "[]"  # [{question, options[4], answer, explanation, document_id, page}]
+    answers: str = "[]"
+    score: int | None = None
+    finished_at: datetime | None = None
+
+
 _engine = None
 
 
@@ -278,7 +339,17 @@ def get_engine():
             event.listen(_engine, "connect", _sqlite_pragmas)
         SQLModel.metadata.create_all(_engine)
         add_missing_columns(_engine)
+        create_search_index(_engine)
     return _engine
+
+
+def create_search_index(engine) -> None:
+    """Full-text search over document passages (SQLite FTS5, built in: no extra model or service)."""
+    if not str(engine.url).startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        conn.execute(text("CREATE VIRTUAL TABLE IF NOT EXISTS passage_fts USING fts5("
+                          "text, document_id UNINDEXED, page UNINDEXED, tokenize='porter unicode61')"))
 
 
 def add_missing_columns(engine) -> list[str]:
@@ -314,6 +385,7 @@ def set_engine(engine) -> None:
     global _engine
     _engine = engine
     SQLModel.metadata.create_all(engine)
+    create_search_index(engine)
 
 
 def get_session() -> Iterator[Session]:

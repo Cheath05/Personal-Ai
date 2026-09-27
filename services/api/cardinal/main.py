@@ -2,24 +2,27 @@
 
 import asyncio
 import contextlib
+from pathlib import Path
 import html
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import briefing, planner, prefs, review, running, syllabus, tools, usage
+from . import brain, briefing, planner, prefs, review, running, syllabus, tools, usage
 from .actions import ActionError, Actions
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
 from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
 from .calendar import Calendar, CalendarError
-from .db import Action, CreditTopUp, Experiment, Memory, Message, SyllabusImport, Task, get_engine, get_session, utcnow
+from .db import (Action, CreditTopUp, Document, Experiment, Flashcard, Memory, Message, Quiz, SyllabusImport, Task,
+                 get_engine, get_session, utcnow)
 from .router import BrainRouter, NoBrainAvailable, basic_check
 from .sources.blackboard import Blackboard
 from .sources.google import SLOTS, Google, GoogleError
@@ -120,8 +123,11 @@ def clear_messages(agent_id: str, session: Session = Depends(get_session)):
 
 def message_json(m: Message, session: Session) -> dict:
     """A chat message, with the current state of any change it proposed (so its card can be shown)."""
-    out = m.model_dump(exclude={"action_ids", "changes"})
+    out = m.model_dump(exclude={"action_ids", "changes", "sources"})
     out["changes"] = json.loads(m.changes) if m.changes else []
+    sources = json.loads(m.sources) if m.sources else []
+    cited = {int(n) for n in re.findall(r"\[(\d+)\]", m.content or "")}
+    out["sources"] = [{**src, "n": i} for i, src in enumerate(sources, 1) if i in cited]
     ids = json.loads(m.action_ids) if m.action_ids else []
     svc = getattr(app.state, "actions", None)
     out["actions"] = [svc.to_json(a) for a in (session.get(Action, i) for i in ids) if a] if svc else []
@@ -186,6 +192,10 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
         context = f"{context}\n{extra}".strip()
     if "running" in agent.access:
         context = f"{context}\n{running.context_text(session, datetime.now(app.state.today.tz))}".strip()
+    hits: list[dict] = []
+    if "notes" in agent.access and turns:
+        notes, hits = brain.notes_context(session, turns[-1]["content"])
+        context = f"{context}\n{notes}".strip()
     try:
         result = await router.run(
             session, agent_id=agent.id, job=agent.job,
@@ -205,7 +215,9 @@ async def chat(body: ChatIn, session: Session = Depends(get_session),
     saved = Message(agent_id=agent.id, role="assistant", content=reply.text,
                     provider=reply.provider, model=reply.model, brain=reply.brain,
                     action_ids=json.dumps([a.id for a in made]) if made else None,
-                    changes=json.dumps([{"status": r.status, "text": r.text} for r in results]) if results else None)
+                    changes=json.dumps([{"status": r.status, "text": r.text} for r in results]) if results else None,
+                    sources=json.dumps([{k: h[k] for k in ("document_id", "title", "page", "snippet")} for h in hits])
+                    if hits else None)
     session.add(saved)
     session.commit()
     session.refresh(saved)
@@ -838,6 +850,237 @@ async def health_import(file: UploadFile = File(...), session: Session = Depends
     finally:
         os.unlink(path)
     return {**result, "status": running.status(session, now_local())}
+
+
+# ---------- Second Brain: library, ask your notes, flashcards, practice tests ----------
+
+def start_job(coro) -> None:
+    task = asyncio.create_task(coro)
+    app.state.jobs = getattr(app.state, "jobs", set())
+    app.state.jobs.add(task)
+    task.add_done_callback(app.state.jobs.discard)
+
+
+def clean_course(value: str | None) -> str | None:
+    v = re.sub(r"\s+", " ", (value or "").strip().upper())[:20]
+    return v or None
+
+
+@app.get("/api/brain")
+def brain_overview(session: Session = Depends(get_session)):
+    docs = session.exec(select(Document).order_by(col(Document.created_at).desc())).all()
+    quizzes = session.exec(select(Quiz).order_by(col(Quiz.id).desc()).limit(5)).all()
+    return {"documents": [brain.doc_json(session, d) for d in docs],
+            "courses": sorted({d.course for d in docs if d.course}),
+            "cards": brain.card_stats(session),
+            "quizzes": [{**brain.quiz_json(q), "questions": len(json.loads(q.questions or "[]"))} for q in quizzes]}
+
+
+@app.post("/api/brain/documents")
+async def add_document(file: UploadFile = File(...), course: str | None = None, session: Session = Depends(get_session)):
+    data = await file.read()
+    if len(data) > brain.MAX_FILE_BYTES:
+        raise HTTPException(413, "That file is over 40 MB.")
+    name = file.filename or "file"
+    doc = Document(title=re.sub(r"[_-]+", " ", Path(name).stem).strip()[:120] or "Untitled", course=clean_course(course),
+                   filename=name, detail="Starting…")
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+    path = brain.storage_dir() / f"{doc.id}{Path(name).suffix.lower()[:8]}"
+    path.write_bytes(data)
+    doc.path = str(path)
+    session.add(doc)
+    session.commit()
+    start_job(brain.ingest(doc.id, app.state.router, data=data))
+    return brain.doc_json(session, doc)
+
+
+class NoteIn(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    text: str | None = Field(default=None, max_length=200_000)
+    url: str | None = Field(default=None, max_length=2000)
+    course: str | None = Field(default=None, max_length=20)
+
+
+@app.post("/api/brain/notes")
+async def add_note(body: NoteIn, session: Session = Depends(get_session)):
+    if not (body.text or body.url):
+        raise HTTPException(400, "Paste some notes or a link.")
+    if body.url and not body.url.startswith(("https://", "http://")):
+        raise HTTPException(400, "Links start with https://.")
+    title = (body.title or "").strip() or (body.url or (body.text or "").strip().split("\n")[0])[:80] or "Notes"
+    doc = Document(title=title, course=clean_course(body.course), kind="link" if body.url else "text",
+                   source_url=body.url, detail="Starting…")
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+    start_job(brain.ingest(doc.id, app.state.router, text_=body.text, url=body.url))
+    return brain.doc_json(session, doc)
+
+
+@app.get("/api/brain/documents/{doc_id}")
+def get_document(doc_id: int, session: Session = Depends(get_session)):
+    d = session.get(Document, doc_id)
+    if not d:
+        raise HTTPException(404, "No such document.")
+    cards = session.exec(select(Flashcard).where(Flashcard.document_id == doc_id)).all()
+    return {**brain.doc_json(session, d), "pages_text": brain.document_pages(session, doc_id),
+            "flashcards": [brain.card_json(session, c) for c in cards], "has_file": bool(d.path)}
+
+
+class DocPatch(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    course: str | None = Field(default=None, max_length=20)
+
+
+@app.patch("/api/brain/documents/{doc_id}")
+def edit_document(doc_id: int, body: DocPatch, session: Session = Depends(get_session)):
+    d = session.get(Document, doc_id)
+    if not d:
+        raise HTTPException(404, "No such document.")
+    if body.title and body.title.strip():
+        d.title = body.title.strip()
+    if body.course is not None:
+        d.course = clean_course(body.course)
+        for c in session.exec(select(Flashcard).where(Flashcard.document_id == doc_id)).all():
+            c.course = d.course
+            session.add(c)
+    session.add(d)
+    session.commit()
+    session.refresh(d)
+    return brain.doc_json(session, d)
+
+
+@app.delete("/api/brain/documents/{doc_id}")
+def remove_document(doc_id: int, session: Session = Depends(get_session)):
+    brain.delete_document(session, doc_id)
+    return {"ok": True}
+
+
+@app.get("/api/brain/documents/{doc_id}/file")
+def document_file(doc_id: int, session: Session = Depends(get_session)):
+    d = session.get(Document, doc_id)
+    if not d or not d.path or not Path(d.path).exists():
+        raise HTTPException(404, "The original file isn't stored.")
+    return FileResponse(d.path, filename=d.filename or Path(d.path).name)
+
+
+@app.post("/api/brain/documents/{doc_id}/dates")
+async def document_dates(doc_id: int, session: Session = Depends(get_session)):
+    """Find dated items in a document (a syllabus, say) with the syllabus reader; you review them as usual."""
+    d = session.get(Document, doc_id)
+    if not d:
+        raise HTTPException(404, "No such document.")
+    text_ = "\n\n".join(p["text"] for p in brain.document_pages(session, doc_id))
+    job = SyllabusImport(course=d.course, source=d.title, detail="Starting…")
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    start_job(syllabus.run_import(job.id, app.state.router, calendar_svc().tz, text=text_))
+    return import_json(job)
+
+
+class AskIn(BaseModel):
+    question: str = Field(max_length=2000)
+    level: str = "class"
+    course: str | None = None
+
+
+@app.post("/api/brain/ask")
+async def ask_notes(body: AskIn, session: Session = Depends(get_session)):
+    if not body.question.strip():
+        raise HTTPException(400, "Ask something.")
+    try:
+        return await brain.ask(session, app.state.router, app.state.agents["axiom"], body.question.strip(),
+                               level=body.level, course=clean_course(body.course), memory=review.memory_text(session))
+    except brain.BrainError as e:
+        raise HTTPException(503, str(e)) from e
+
+
+@app.get("/api/brain/search")
+def search_notes(q: str, course: str | None = None, session: Session = Depends(get_session)):
+    return brain.search(session, q, course=clean_course(course), limit=10)
+
+
+@app.get("/api/brain/cards/due")
+def cards_due(course: str | None = None, session: Session = Depends(get_session)):
+    titles = {d.id: d.title for d in session.exec(select(Document)).all()}
+    return [brain.card_json(session, c, titles) for c in brain.due_cards(session, course=clean_course(course))]
+
+
+class CardIn(BaseModel):
+    front: str = Field(max_length=300)
+    back: str = Field(max_length=600)
+    course: str | None = Field(default=None, max_length=20)
+
+
+@app.post("/api/brain/cards")
+def add_card(body: CardIn, session: Session = Depends(get_session)):
+    if not body.front.strip() or not body.back.strip():
+        raise HTTPException(400, "A card needs a front and a back.")
+    c = Flashcard(front=body.front.strip(), back=body.back.strip(), course=clean_course(body.course), source="you")
+    session.add(c)
+    session.commit()
+    session.refresh(c)
+    return brain.card_json(session, c)
+
+
+class RatingIn(BaseModel):
+    rating: str
+
+
+@app.post("/api/brain/cards/{card_id}/review")
+def review_card(card_id: int, body: RatingIn, session: Session = Depends(get_session)):
+    try:
+        return brain.card_json(session, brain.review(session, card_id, body.rating))
+    except brain.BrainError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/brain/cards/{card_id}")
+def delete_card(card_id: int, session: Session = Depends(get_session)):
+    c = session.get(Flashcard, card_id)
+    if c:
+        session.delete(c)
+        session.commit()
+    return {"ok": True}
+
+
+class QuizIn(BaseModel):
+    course: str | None = None
+    count: int = Field(default=8, ge=3, le=20)
+
+
+@app.post("/api/brain/quizzes")
+async def start_quiz(body: QuizIn, session: Session = Depends(get_session)):
+    q = Quiz(course=clean_course(body.course), detail="Starting…")
+    session.add(q)
+    session.commit()
+    session.refresh(q)
+    start_job(brain.write_quiz(q.id, app.state.router, count=body.count))
+    return brain.quiz_json(q)
+
+
+@app.get("/api/brain/quizzes/{quiz_id}")
+def get_quiz(quiz_id: int, session: Session = Depends(get_session)):
+    q = session.get(Quiz, quiz_id)
+    if not q:
+        raise HTTPException(404, "No such test.")
+    return brain.quiz_json(q)
+
+
+class GradeIn(BaseModel):
+    answers: list[int | None]
+    add_missed: bool = True
+
+
+@app.post("/api/brain/quizzes/{quiz_id}/grade")
+def grade_quiz(quiz_id: int, body: GradeIn, session: Session = Depends(get_session)):
+    try:
+        return brain.quiz_json(brain.grade(session, quiz_id, body.answers, body.add_missed), reveal=True)
+    except brain.BrainError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

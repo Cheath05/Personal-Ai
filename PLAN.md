@@ -511,7 +511,7 @@ Then approve the route in the admin console. This matters because an iPhone can 
 | 2b. Life Dashboard: act ✅ | Hub | Action Preview queue (Authorize / Always allow / Deny), narrow **trust rules** with an always-ask list enforced in code, Activity Log with Undo, Sigma's rule suggestions, Axiom's study-block planner (ghost blocks on the calendar) |
 | 3. Executive Assistant ✅ | Hub | Delta's morning check-in and evening review, weekly rollup with a plan you authorize, experiments, Core Memory v1 with Sigma's nightly patterns (shown to you first) |
 | 4. Running ✅ | Hub + iPhone | Vector's 12-week plan and VDOT paces (recalculated after time trials), runs checked against each session, status window, runs proposed on the calendar, Apple Watch data via Health Auto Export (automatic) or an Apple Health export (free), manual logging, readiness from sleep and resting HR |
-| 5. Second Brain | Mac | Axiom ingestion, notes, flashcards, exam mode |
+| 5. Second Brain ✅ | Hub | Library (PDF, slides, Word, photos, links, notes) with page-cited search (SQLite FTS5), ask-your-notes at three levels, summaries and key terms, FSRS flashcards, exam mode with verified answer keys, dates from files, Core Memory ring |
 | 6. Full Workforce | Mac | Relay drafts, Sigma patterns, Radix, ActivityWatch |
 | 7. Hardening | Server | Push notifications, login with a passkey, Postgres if SQLite ever gets slow, restore drills |
 

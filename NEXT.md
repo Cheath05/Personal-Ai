@@ -1,4 +1,4 @@
-# Next session: Phase 5 (Second Brain) or voice
+# Next session: Phase 6 (full workforce) or voice
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -166,9 +166,28 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - **Tested:** 89 tests. The real 4B model on the demo handled the user's own Vector message: it set the hours and proposed moving Tuesday's 06:00 intervals to 16:30.
 - **On the hub:** Tuesday's approved run is still at 06:00. Re-send the request to Vector, and it will now propose the move.
 
+## Phase 5 (built 27 Sep 2026): Second Brain (Axiom)
+
+- **`cardinal/brain.py`:**
+  - **Reading:** PDF (by page), .pptx (by slide, plus speaker notes, zip/XML with no extra dependency), .docx, text, HTML, links (`syllabus.fetch_url`) and photos (RapidOCR). Originals are kept in `data/files/`.
+  - **Search:** passages of ~900 chars with page numbers, in a SQLite **FTS5** table `passage_fts` (porter tokenizer, BM25), created in `db.create_search_index`. No embedding model is needed.
+  - **Digest,** per document, from up to 4 chunks spread across it: the `notes_digest` job (JSON) gives points, key terms with pages, and up to 6 flashcards per chunk; `notes_overview` writes the summary.
+  - **Ask** (`/api/brain/ask`): the top 6 passages as numbered sources, levels simple / class / deep, and `[n]` citations that link to pages. Axiom's and Cardinal's chat (`notes` access) include matching passages and store `Message.sources`.
+  - **Flashcards:** FSRS via the `fsrs` package; `Flashcard.fsrs` holds the card state and `due` is indexed. Axiom's chat tool `make_flashcard`.
+  - **Practice tests** (`write_quiz`):
+    - The model writes `right_answer` plus 3 `wrong_answers`; the **code** shuffles them and records the key.
+    - Each question is then re-solved from its source alone (the `quiz_check` job), and kept only if it matches.
+    - Sources are labeled S1…; letters got confused with answers.
+    - Missed questions become flashcards.
+    - Measured on the 4B model before this fix: 2 of 4 keys were wrong. After it: 8 of 8 correct across two tests, in about 30–40 s each.
+  - **"Find dates"** runs a document through the syllabus reader, then the review dialog opens.
+- **Brain view:** Ask your notes, Flashcards (review dialog), Exam mode, Library (upload, drop, paste or link; grouped by course), the document dialog (summary, terms, cards, pages), and the Core Memory ring (SVG squares).
+- **Tested:** 100 tests. Real run on the Mac 4B: a lecture was digested into an accurate summary, 5 terms and 6 good cards, with the course detected.
+- **Not done:** a Google Drive "School" folder sync (it needs the drive.readonly scope and the Drive API enabled), and Sigma's daily log.
+
 ## Next
 
-- **Phase 5: Second Brain (Axiom),** or **Phase 1.6: voice.** Ask the user.
+- **Phase 6: Full workforce** (Relay drafts, Sigma patterns, Radix research, ActivityWatch), or **Phase 1.6: voice**. Ask the user.
 
 ## Things to keep in mind
 
