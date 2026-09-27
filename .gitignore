@@ -1,0 +1,14 @@
+# Reference screenshots from anime (copyrighted) stay local only
+design/reference/*
+!design/reference/README.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+node_modules/
+__pycache__/
+.venv/
