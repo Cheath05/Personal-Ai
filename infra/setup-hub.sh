@@ -81,7 +81,16 @@ step "Server brain (Ollama, $MODEL on CPU)"
 if ! command -v ollama >/dev/null; then
   curl -fsSL https://ollama.com/install.sh | sh   # listens on localhost only
 fi
-sudo systemctl enable --now ollama >/dev/null
+# Keep the model loaded: a cold load on CPU adds up to a minute to the first reply.
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_KEEP_ALIVE=-1"\n' | sudo tee /etc/systemd/system/ollama.service.d/cardinal.conf >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable ollama >/dev/null
+sudo systemctl restart ollama
+if ! grep -qw avx2 /proc/cpuinfo; then
+  echo "WARNING: this VM's CPU has no AVX2, so the server brain will be very slow (~4 tok/s)."
+  echo "In Proxmox: VM > Hardware > Processors > Type: host, then shut the VM down and start it again."
+fi
 for _ in $(seq 1 20); do curl -sf localhost:11434/api/version >/dev/null && break; sleep 1; done
 ollama pull "$MODEL"
 
