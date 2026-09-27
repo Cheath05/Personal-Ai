@@ -157,7 +157,7 @@ step "Done"
 echo "Cardinal:  $URL"
 echo "Brains:    curl -s localhost:$PORT/api/brains"
 echo "Logs:      journalctl -u cardinal -f"
-echo "Update:    ~/cardinal/infra/setup-hub.sh  (pulls and restarts)"
+echo "Update:    $REPO/infra/setup-hub.sh  (pulls and restarts)"
 echo
 echo "If the HTTPS address doesn't load, turn on MagicDNS and HTTPS Certificates"
 echo "in the Tailscale admin console (DNS page), then run: sudo tailscale serve --bg $PORT"
