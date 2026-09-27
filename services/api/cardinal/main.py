@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
-from . import briefing, syllabus, usage
+from . import briefing, planner, syllabus, usage
+from .actions import ActionError, Actions
 from .agents import load_agents
 from .brains import ClaudeBrain, OllamaBrain
 from .config import ROOT, WEB_DIR, get_settings, load_brains_config, load_routing_config
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
     app.state.agents = load_agents()
     app.state.router = build_router()
     app.state.today = build_today(settings)
+    app.state.actions = Actions(app.state.today.calendar, {a.id: a.name for a in app.state.agents.values()})
     task = asyncio.create_task(briefing.run_scheduler(app.state, settings)) if settings.scheduler else None
     yield
     if task:
@@ -431,6 +433,96 @@ async def add_syllabus_items(import_id: int, body: AddProposalsIn, session: Sess
     session.commit()
     app.state.today.invalidate()
     return {"added": added, "warning": warning}
+
+
+# ---------- Action Previews, trust rules, Activity Log ----------
+
+def actions_svc() -> Actions:
+    return app.state.actions
+
+
+def action_error(e: ActionError) -> HTTPException:
+    return HTTPException(409, str(e))
+
+
+@app.get("/api/actions")
+def list_actions(session: Session = Depends(get_session)):
+    svc = actions_svc()
+    return {"pending": [svc.to_json(a) for a in svc.pending(session)],
+            "recent_auto": [svc.to_json(a) for a in svc.recent_auto(session)]}
+
+
+@app.get("/api/actions/log")
+def action_log(limit: int = 60, session: Session = Depends(get_session)):
+    svc = actions_svc()
+    return [svc.to_json(a) for a in svc.log(session, min(limit, 200))]
+
+
+class ApproveIn(BaseModel):
+    remember: bool = False
+
+
+@app.post("/api/actions/{action_id}/approve")
+async def approve_action(action_id: int, body: ApproveIn, session: Session = Depends(get_session)):
+    svc = actions_svc()
+    try:
+        a, suggestion = await svc.approve(session, action_id, remember=body.remember)
+    except ActionError as e:
+        raise action_error(e) from e
+    app.state.today.invalidate()
+    return {"action": svc.to_json(a), "suggestion": suggestion}
+
+
+@app.post("/api/actions/{action_id}/deny")
+def deny_action(action_id: int, session: Session = Depends(get_session)):
+    try:
+        return actions_svc().to_json(actions_svc().deny(session, action_id))
+    except ActionError as e:
+        raise action_error(e) from e
+
+
+@app.post("/api/actions/{action_id}/undo")
+async def undo_action(action_id: int, session: Session = Depends(get_session)):
+    try:
+        a = await actions_svc().undo(session, action_id)
+    except ActionError as e:
+        raise action_error(e) from e
+    app.state.today.invalidate()
+    return actions_svc().to_json(a)
+
+
+@app.get("/api/actions/{action_id}/rule-preview")
+def rule_preview(action_id: int, session: Session = Depends(get_session)):
+    try:
+        return actions_svc().rule_preview(session, action_id)
+    except ActionError as e:
+        raise action_error(e) from e
+
+
+@app.post("/api/actions/{action_id}/remember")
+def remember_action(action_id: int, session: Session = Depends(get_session)):
+    try:
+        return actions_svc().rule_json(actions_svc().remember(session, action_id))
+    except ActionError as e:
+        raise action_error(e) from e
+
+
+@app.get("/api/rules")
+def list_rules(session: Session = Depends(get_session)):
+    return [actions_svc().rule_json(r) for r in actions_svc().rules(session)]
+
+
+@app.delete("/api/rules/{rule_id}")
+def revoke_rule(rule_id: int, session: Session = Depends(get_session)):
+    actions_svc().revoke(session, rule_id)
+    return list_rules(session)
+
+
+@app.post("/api/planner/run")
+async def run_planner(session: Session = Depends(get_session)):
+    result = await planner.plan_study(session, calendar_svc(), actions_svc())
+    app.state.today.invalidate()
+    return result
 
 
 # The web app (plain HTML/JS, no build step). Mounted last so /api routes win.

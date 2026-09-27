@@ -22,7 +22,7 @@ const STRIP_BACK = 7, STRIP_AHEAD = 14;
 
 const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
-export function createCalendar({ toast, onChange }) {
+export function createCalendar({ toast, onChange, onProposal }) {
   const st = { date: null, data: null, tz: "America/New_York", syl: null, sylTimer: null };
   const fmt = (opts) => new Intl.DateTimeFormat([], { timeZone: st.tz, ...opts });
   const hm = () => fmt({ hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -154,7 +154,7 @@ export function createCalendar({ toast, onChange }) {
     }
     layoutColumns(timed).forEach((t) => {
       const e = t.ev;
-      const b = el("button", `ev${e.source === "cardinal" ? " mine" : ""}`);
+      const b = el("button", `ev${e.source === "cardinal" ? " mine" : ""}${e.source === "proposed" ? " proposed" : ""}`);
       b.type = "button";
       b.style.setProperty("--ev", e.color || "var(--acc)");
       b.style.top = `${top(t.s) + 1}px`;
@@ -165,7 +165,7 @@ export function createCalendar({ toast, onChange }) {
       b.style.width = `calc((100% - var(--gutter)) / ${t.cols} - 4px)`;
       b.append(el("b", null, e.title), el("small", null, `${hm().format(new Date(e.start))}–${hm().format(new Date(e.end))}${e.calendar ? ` · ${e.calendar}` : ""}`));
       b.title = `${e.title} (${e.calendar || ""})`;
-      b.addEventListener("click", () => openEvent(e));
+      b.addEventListener("click", () => (e.source === "proposed" && onProposal ? onProposal(e.action_id) : openEvent(e)));
       parts.push(b);
     });
     if (isToday) {

@@ -1,4 +1,4 @@
-# Next session: Phase 2b (Action Previews and trust rules)
+# Next session: after Phase 2 (pick voice or Executive Assistant)
 
 Start here when picking the project up on another machine. PLAN.md has the full design; README.md has run steps.
 
@@ -70,11 +70,34 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Measured on the Mac's 4B model: 16/16 dates from a pasted schedule in 27 s, and 5/5 from a photo in 13 s. Plain topic rows are sometimes skipped.
 - **Needs the user once:** Today → Personal Google → **Reconnect**, to grant the Cardinal-calendar permission.
 
-## Next: Phase 2b (acting, with approval)
+## Phase 2b (built 27 Sep 2026): acting, with approval
 
-1. Action Preview queue: proposed change, before/after, why, undoable. Authorize once, Always allow, or Deny.
-2. Trust rules, narrowly matched, plus a hard-coded always-ask list (PLAN §6). Activity Log with Undo.
-3. First AI-proposed actions: study blocks before Blackboard and syllabus due dates, written to the Cardinal calendar.
+- **`cardinal/actions.py`** is the only code path that changes anything.
+  - Agents `propose()` an `Action`. It runs only on Authorize, or when an active `TrustRule` matches.
+  - A rule-run action still shows as a note with Undo on Today and in the Activity Log.
+  - `ALWAYS_ASK` (email.send, calendar.remove_item, files.delete, payment, settings.security, device.operator) can never match a rule, and can't become one.
+  - Rules expire after 60 days unused. Undo works for 14 days.
+  - Sigma offers a rule after 3 approvals of the same kind within 30 days.
+- **Action kinds:** `calendar.add_block` only, which writes a `CalendarItem` and its Google mirror. Add a kind by giving it preview, rule_from, matches and an execute branch.
+- **`cardinal/planner.py`**: Axiom's study planner. It's plain code, no LLM.
+  - Input: 7 days of due dates (Blackboard, plus syllabus items of kind due/exam/quiz), de-duplicated.
+  - Grouping:
+    - Work due the same day → one block of 60–150 min.
+    - Quiz → 45 min.
+    - Exam → 2 × 90 min.
+  - Placement: free time between 08:00 and 22:00, afternoons and evenings first, with a 10-minute buffer. At most 2 blocks or 180 min per day.
+  - Suggestions are de-duplicated by `dedupe_key`, so a denied one never comes back.
+  - Runs daily at the briefing time (and at hub start if that time has passed), or from "Suggest study time".
+- **UI:**
+  - Today → "Needs your OK" cards (Authorize, Always allow… with the exact rule shown first, Deny) and ghost "PROPOSED" blocks on the calendar.
+  - Access → Trust rules (with Revoke) and the Activity log (with Undo).
+  - Top bar → "N to OK" chip.
+- **Tested:** 63 tests. A demo run covered proposals around events, the rule dialog, auto-add by a rule, and the log.
+
+## Next
+
+- **More action kinds:** move or reschedule a block, pinning the briefing, and Relay drafting email replies. Sending mail always asks.
+- **Phase 1.6 (voice) or Phase 3 (Delta check-ins and the weekly rollup):** ask the user which comes first.
 
 ## Things to keep in mind
 

@@ -33,6 +33,7 @@
           <button type="button" data-view="access">Access</button>
         </nav>
         <div class="top-r">
+          <button class="ok-chip" type="button" id="ok-chip" hidden title="Changes waiting for your OK"></button>
           <button class="usage-chip" type="button" id="usage-chip" aria-haspopup="dialog" aria-expanded="false" title="Token usage this month">
             <span id="usage-chip-text">–</span>
           </button>
@@ -92,6 +93,15 @@
           <div class="row-actions">
             <button type="button" class="btn" id="brief-now">Write it now</button>
             <span class="note small" id="brief-note"></span>
+          </div>
+        </section>
+        <section class="panel span-all ok-panel" id="ok-panel">
+          <div class="ph"><span class="t">Needs your OK</span><span class="m" id="ok-meta">ACTION PREVIEWS</span></div>
+          <div class="ok-list" id="ok-list"></div>
+          <div class="sigma" id="sigma" hidden></div>
+          <div class="row-actions">
+            <button type="button" class="btn" id="plan-now">Suggest study time</button>
+            <span class="note small" id="plan-note">Axiom checks your due dates every morning and proposes study blocks. Nothing is added until you say so.</span>
           </div>
         </section>
         <section class="panel span-all cal-panel">
@@ -193,8 +203,9 @@
           <div id="usage-full"></div>
         </section>
         <section class="panel">
-          <div class="ph"><span class="t">Trust rules</span><span class="m">PHASE 2</span></div>
-          <p class="note">Remembered approvals arrive with the first device and calendar actions. Until then, no agent can change anything.</p>
+          <div class="ph"><span class="t">Trust rules</span><span class="m">REMEMBERED APPROVALS</span></div>
+          <ul class="list" id="rules-list"></ul>
+          <p class="note small">A rule lets one agent do one narrow kind of change without asking. You still get a note with Undo. Unused rules expire after 60 days. Sending messages, deleting, payments and security settings always ask.</p>
         </section>
         <section class="panel">
           <div class="ph"><span class="t">Never accessed</span><span class="m">LOCKED IN CODE</span></div>
@@ -206,6 +217,10 @@
             <li><span>Keystrokes and screenshots</span><span class="tag bad">Locked</span></li>
           </ul>
         </section>
+        <section class="panel span-all">
+          <div class="ph"><span class="t">Activity log</span><span class="m">EVERY CHANGE, WHO AND WHY</span></div>
+          <ul class="list log" id="log-list"></ul>
+        </section>
       </div>
     </main>
   </div>
@@ -216,6 +231,23 @@
       <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
     <dl class="kv" id="ev-info"></dl>
     <div class="row-actions" id="ev-actions"></div>
+  </dialog>
+
+  <!-- An action waiting for your OK (opened from the calendar) -->
+  <dialog class="sheet" id="act-dialog" aria-label="Action preview">
+    <div class="sheet-head"><h3>Needs your OK</h3>
+      <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <div id="act-body"></div>
+  </dialog>
+
+  <!-- "Always allow": show the exact rule first -->
+  <dialog class="sheet" id="rule-dialog" aria-labelledby="rule-h">
+    <div class="sheet-head"><h3 id="rule-h">Always allow?</h3>
+      <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <p class="rule-text" id="rule-text"></p>
+    <p class="note small">You can revoke it any time in Access → Trust rules.</p>
+    <div class="row-actions"><button type="button" class="btn primary" id="rule-yes">Allow and do it now</button>
+      <button type="button" class="btn" data-close>Cancel</button></div>
   </dialog>
 
   <!-- Calendar: add an item -->

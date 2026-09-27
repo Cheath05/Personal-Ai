@@ -1,6 +1,6 @@
 // Minimal service worker so Cardinal installs as an app. Network first, cached shell as fallback.
-const CACHE = "cardinal-shell-v2";
-const SHELL = ["/", "/css/app.css", "/js/app.js", "/js/nexus.js", "/js/api.js", "/js/calendar.js", "/manifest.webmanifest", "/icons/icon.svg"];
+const CACHE = "cardinal-shell-v3";
+const SHELL = ["/", "/css/app.css", "/js/app.js", "/js/nexus.js", "/js/api.js", "/js/calendar.js", "/js/actions.js", "/manifest.webmanifest", "/icons/icon.svg"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

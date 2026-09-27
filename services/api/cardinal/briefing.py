@@ -73,10 +73,27 @@ def briefing_due(now: datetime, at: str, last_day: str | None, last_try: datetim
 
 
 async def run_scheduler(state, settings) -> None:
-    """Checks every 30 s. Also catches up if the hub was off at 6:00."""
+    """Checks every 30 s. Also catches up if the hub was off at 6:00.
+
+    Each morning: Ordinal's briefing, then Axiom's study-block suggestions (which wait for your OK)."""
+    from .planner import plan_study
+
     tz = ZoneInfo(settings.timezone)
     last_try: datetime | None = None
+    last_plan_day: str | None = None
     while True:
+        try:
+            now = datetime.now(tz)
+            hh, mm = (int(x) for x in settings.briefing_time.split(":"))
+            if now.time() >= time(hh, mm) and last_plan_day != local_day(now) and getattr(state, "actions", None):
+                last_plan_day = local_day(now)
+                with Session(get_engine()) as session:
+                    result = await plan_study(session, state.today.calendar, state.actions)
+                    log.info("Study planner: %s", result["note"])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Study planner failed")
         try:
             now = datetime.now(tz)
             with Session(get_engine()) as session:

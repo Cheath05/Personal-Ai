@@ -1,4 +1,5 @@
 import { api, DEVICE } from "./api.js";
+import { createActions } from "./actions.js";
 import { createCalendar } from "./calendar.js";
 import { createNexus } from "./nexus.js";
 
@@ -22,6 +23,7 @@ const pad = (n) => String(n).padStart(2, "0");
 const state = { agents: [], sel: 0, view: "nexus", busy: false, brains: null, usage: null };
 let nexus = null;
 let calendar = null;
+let actions = null;
 
 /* ---------- Formatting ---------- */
 function fmtTokens(n) {
@@ -62,7 +64,7 @@ function go(view) {
   nexus?.setView(view);
   history.replaceState(null, "", `#${view}`);
   if (view === "access") refreshAccess();
-  if (view === "today") { refreshToday(); calendar?.load(); }
+  if (view === "today") { refreshToday(); calendar?.load(); actions?.refresh(); }
 }
 
 /* ---------- Agent selection ---------- */
@@ -319,6 +321,7 @@ async function refreshBrains() {
 }
 
 async function refreshAccess() {
+  actions?.renderAccess();
   await Promise.all([refreshBrains(), refreshUsage()]);
   const b = state.brains;
   const list = $("brains-list");
@@ -508,6 +511,7 @@ function buildCommands() {
     ...[["today", "Open Today"], ["training", "Open Training"], ["brain", "Open Second Brain"], ["review", "Open Review"], ["access", "Open Access"]]
       .map(([v, label]) => ({ label, hint: "View", run: () => go(v) })),
     { label: "Show usage", hint: "Tokens and cost", run: () => toggleUsage(true) },
+    { label: "Suggest study time", hint: "Axiom", run: () => { go("today"); $("plan-now").click(); } },
     ...Object.entries(MOTION_LABELS).map(([pref, name]) => ({
       label: `Motion: ${name}`, hint: pref === motionPref ? "Current, this device" : "This device", run: () => setMotion(pref),
     })),
@@ -552,7 +556,15 @@ async function boot() {
     return;
   }
   nexus = createNexus({ canvas: $("bg"), stage: $("stage"), agents: state.agents, onSelect: select, reduceMotion });
-  calendar = createCalendar({ toast, onChange: () => refreshToday(true) });
+  calendar = createCalendar({ toast, onChange: () => refreshToday(true), onProposal: (id) => actions?.open(id) });
+  actions = createActions({
+    toast,
+    agentColor: (id) => state.agents.find((a) => a.id === id)?.color || "#3d8bff",
+    onChange: () => { calendar.refresh(); refreshToday(true); if (state.view === "access") actions.renderAccess(); },
+  });
+  actions.refresh();
+  setInterval(() => { if (!document.hidden) actions.refresh(); }, 60000);
+  $("ok-chip").addEventListener("click", () => go("today"));
   buildCommands();
   await select(0);
   const hash = location.hash.replace("#", "");

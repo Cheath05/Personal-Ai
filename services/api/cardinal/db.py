@@ -124,6 +124,43 @@ class Briefing(SQLModel, table=True):
     trigger: str = "scheduled"  # "scheduled" | "manual"
 
 
+class Action(SQLModel, table=True):
+    """Something an agent wants to change. Nothing runs until you authorize it or a trust rule covers it.
+
+    Also the Activity Log: executed, denied, undone and failed actions stay here."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=utcnow, index=True)
+    agent_id: str
+    kind: str = Field(index=True)  # e.g. "calendar.add_block"
+    title: str
+    reason: str
+    payload: str  # JSON
+    status: str = Field(default="pending", index=True)  # pending | executed | denied | undone | failed | expired
+    undoable: bool = True
+    dedupe_key: str | None = Field(default=None, index=True)
+    rule_id: int | None = None  # set when a trust rule ran it for you
+    decided_at: datetime | None = None
+    executed_at: datetime | None = None
+    result: str | None = None  # JSON, e.g. the created item's id (used to undo)
+    error: str | None = None
+
+
+class TrustRule(SQLModel, table=True):
+    """A remembered approval: a narrow "always allow" for one agent and one kind of action."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    agent_id: str
+    kind: str
+    conditions: str  # JSON, e.g. {"max_minutes": 120, "earliest": "08:00", "latest": "22:00"}
+    description: str  # exactly what you agreed to, in words
+    uses: int = 0
+    last_used: datetime | None = None
+    active: bool = True
+    source_action_id: int | None = None
+
+
 _engine = None
 
 

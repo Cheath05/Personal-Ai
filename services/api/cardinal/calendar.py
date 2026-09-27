@@ -72,6 +72,7 @@ class Calendar:
         self.feed_client = feed_client
         self._feeds: dict[int, Feed] = {}
         self._cache: dict[str, tuple[float, dict]] = {}
+        self.proposals = None  # set by Actions: pending blocks shown as ghosts until you decide
 
     @property
     def tz(self) -> ZoneInfo:
@@ -128,6 +129,8 @@ class Calendar:
                 errors.append({"source": label, "detail": str(e)})
 
         events += self.items_between(session, start, end)
+        if self.proposals:
+            events += self.proposals(session, start, end)
         feed_events, feed_errors = await self.feeds_between(session, start, end)
         events += feed_events
         errors += feed_errors

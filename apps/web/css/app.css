@@ -198,6 +198,41 @@ a.btn { text-decoration: none; }
 .btn.danger { color: var(--bad); border-color: rgba(255,84,112,.4); }
 .btn.danger:hover { background: rgba(255,84,112,.12); box-shadow: 0 0 16px -4px var(--bad); }
 
+/* ---------- Action Previews ---------- */
+.ok-chip {
+  font: 600 11px/1 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; white-space: nowrap;
+  padding: 7px 10px; border-radius: 999px; color: #1a1200; background: var(--warn); border: 0; box-shadow: 0 0 16px -4px var(--warn);
+}
+.ok-chip[hidden] { display: none; }
+.ok-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.ok-list > .note { grid-column: 1 / -1; }
+.act-card {
+  display: grid; gap: 8px; padding: 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--ag) 40%, var(--line));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ag) 12%, transparent), rgba(255,255,255,.02));
+  box-shadow: inset 3px 0 0 var(--ag);
+}
+.act-head { display: flex; justify-content: space-between; gap: 8px; }
+.act-agent { font: 600 10.5px/1 var(--f-ui); letter-spacing: .18em; text-transform: uppercase; color: var(--ag); }
+.act-kind { font: 11px/1 var(--f-mono); color: var(--faint); }
+.act-card h4 { margin: 0; font-size: 16px; font-weight: 500; }
+.act-diff { display: grid; grid-template-columns: max-content 1fr; gap: 5px 12px; margin: 0; font-size: 13.5px; }
+.act-diff dt { font: 600 10px/1.9 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; color: var(--faint); }
+.act-diff dd { margin: 0; color: var(--dim); overflow-wrap: anywhere; }
+.act-diff dd.before { text-decoration: line-through; text-decoration-color: rgba(255,84,112,.6); }
+.act-diff dd.after { color: var(--text); font-family: var(--f-mono); font-size: 12.5px; }
+.act-card .row-actions { margin-top: 4px; }
+.auto-note { grid-column: 1 / -1; display: flex; gap: 12px; align-items: baseline; justify-content: space-between; font-size: 13.5px; color: var(--dim); padding: 8px 12px; border-radius: 8px; background: rgba(77,255,166,.06); border: 1px solid rgba(77,255,166,.2); }
+.sigma { padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,79,216,.35); background: rgba(255,79,216,.07); display: grid; gap: 6px; }
+.sigma[hidden] { display: none; }
+.rule-text { margin: 0; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.04); border: 1px solid var(--line); font-size: 14.5px; line-height: 1.5; }
+.cal-grid .ev.proposed { border-style: dashed; border-left-style: dashed; background: color-mix(in srgb, var(--ev) 10%, rgba(4,10,24,.55)); box-shadow: none; animation: ghost 2.6s ease-in-out infinite; }
+.cal-grid .ev.proposed b::before { content: "PROPOSED · "; font: 600 9.5px/1 var(--f-ui); letter-spacing: .14em; color: var(--ev); }
+@keyframes ghost { 50% { opacity: .62; } }
+:root[data-motion="reduced"] .cal-grid .ev.proposed { animation: none; }
+.list.log li > div { min-width: 0; margin-right: auto; }
+#rules-list li > div { min-width: 0; margin-right: auto; }
+#rules-list .sub + .sub { margin-top: 2px; }
+
 /* ---------- Calendar (Today) ---------- */
 .cal-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cal-bar .icon-btn { font-size: 20px; line-height: 1; width: 38px; height: 38px; justify-content: center; }
