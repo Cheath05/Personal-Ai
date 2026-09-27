@@ -9,6 +9,11 @@ Start here when picking the project up on another machine. PLAN.md has the full 
   - Runs as the `cardinal` systemd service, with a nightly database backup to `~/cardinal-backups`.
   - To reach it: `ssh usr1@cardinal` (Tailscale SSH, no password).
   - `sudo` needs the user's password. Ask them to run anything that needs it.
+  - **Updates itself:** `cardinal-update.timer` checks `cardinal-foundation` every 5 minutes. When there are new commits it backs up the database, pulls, restarts Cardinal and checks `/api/health`. If that fails, it rolls back and skips the bad commit.
+    - Logs: `journalctl -u cardinal-update`.
+    - A sudoers rule, `/etc/sudoers.d/cardinal-update`, lets `usr1` run only `systemctl restart cardinal` without a password.
+    - Changes to `setup-hub.sh` still need a manual run.
+    - **Anything pushed to `cardinal-foundation` goes live within 5 minutes**, so run the tests before pushing.
 - **Brains:** the hub's `brains.yaml` now lists `g14` → `mac` → `server`. The `mac` entry was added on 27 Sep; the old file is `brains.yaml.bak-2026-09-27`.
   - **G14:** Tailscale name `alex-windows`, `qwen3:8b` on the GPU at ~40–45 tok/s. Online.
   - **Mac:** `m3-air`, `qwen3:4b-instruct` at ~29 tok/s. Offline until the steps below are done.
@@ -37,7 +42,7 @@ Start here when picking the project up on another machine. PLAN.md has the full 
    # CLI path if `tailscale` isn't on PATH: /Applications/Tailscale.app/Contents/MacOS/Tailscale
    ```
    Then from the Mac or G14: `curl http://m3-air:11434/api/version`.
-3. **Restart the hub** so it reads the new `brains.yaml`. The user runs this, since it needs their password: `ssh usr1@cardinal` then `sudo systemctl restart cardinal`.
+3. **Restart the hub** so it reads the new `brains.yaml`: `ssh usr1@cardinal 'sudo -n systemctl restart cardinal'`. No password needed; the sudoers rule allows it.
 4. Check `curl https://cardinal.tailaf3b0c.ts.net/api/brains` shows `mac` `online: true`, and that the Access view lists three brains.
 5. Push, and update this file.
 
