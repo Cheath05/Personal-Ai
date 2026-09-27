@@ -9,6 +9,15 @@ Start here when picking the project up on another machine. PLAN.md has the full 
 - Branch: `cardinal-foundation` (pushed). `main` is still the initial commit.
 - No Claude API key is set, so everything runs locally.
 
+## G14 results (27 Sep 2026)
+
+- Ollama 0.34.4 and uv are installed. `qwen3:8b` runs 100% on the GPU (5.6 GB) at **~44–46 tok/s**, about 1 s for a short answer. `"think": false` works, so no instruct variant is needed.
+- A loaded model uses ~7.2 of the 8 GB of VRAM, so GPU voice (Phase 1.6) won't fit beside it.
+- Reached over WireGuard: G14 `10.10.20.6`, Mac `10.10.20.3`. `OLLAMA_HOST=0.0.0.0`, plus the firewall rule "Ollama (Cardinal, Mac over WireGuard)", which allows TCP 11434 only from 10.10.20.3 on the `Home_lab` tunnel (Windows labels the tunnel Public).
+- All 27 tests pass on Windows. `scripts/dev.ps1` is the PowerShell version of `dev.sh`.
+- **Next, on the Mac:** `curl http://10.10.20.6:11434/api/version`, then set the g14 `url` in `brains.yaml` to `http://10.10.20.6:11434` and check the Access view. If `curl` hangs, WireGuard isn't forwarding traffic between clients (an OPNsense setting; ask before touching it).
+- After a reboot, check that the G14 is still reachable. On first launch the tray app didn't start the server, so `ollama serve` was started by hand.
+
 ## Goal for the Windows session
 
 Make the G14 Cardinal's fast brain (Phase 1, second half):

@@ -20,6 +20,8 @@ cp .env.example .env        # set your name; leave ANTHROPIC_API_KEY empty to st
 ./scripts/dev.sh            # http://localhost:8000
 ```
 
+On Windows (PowerShell), use `.\scripts\dev.ps1` (or `.\scripts\dev.ps1 -Lan`).
+
 **iPhone, for now:**
 
 1. Run `./scripts/dev.sh --lan` on the Mac.
